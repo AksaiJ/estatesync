@@ -18,7 +18,9 @@ export default function PublicHome() {
   const [customerInfo, setCustomerInfo] = useState(JSON.parse(localStorage.getItem('customerInfo') || 'null'));
 
   // Form State
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '' });
+  const [modalMode, setModalMode] = useState('login'); // 'login' or 'signup'
+  const [loginMethod, setLoginMethod] = useState('password'); // 'password' or 'otp'
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '', password: '' });
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [message, setMessage] = useState('');
@@ -77,10 +79,13 @@ export default function PublicHome() {
       }
     } else {
       setShowModal(true);
+      setModalMode('login'); // default to login when they click express interest
+      setLoginMethod('password'); // default to password login
       setOtpSent(false);
       setMessage('');
       setOtpCooldown(0);
       setIsSendingOtp(false);
+      setFormData(prev => ({...prev, password: ''}));
     }
   };
 
@@ -93,20 +98,30 @@ export default function PublicHome() {
       return;
     }
 
+    if (modalMode === 'signup') {
+      if (!formData.password || formData.password.length < 8 || !/[a-zA-Z]/.test(formData.password) || !/[0-9]/.test(formData.password)) {
+        setMessage('Error: Password must be at least 8 characters long and contain both letters and numbers.');
+        return;
+      }
+    }
+
     setIsSendingOtp(true);
     try {
       setMessage('Sending...');
-      await api.post('/public/send-otp', { email: formData.email, phone: formData.phone });
+      await api.post('/public/send-otp', { email: formData.email, phone: formData.phone, type: modalMode });
       setOtpSent(true);
       setMessage('OTP sent to your email!');
       setOtpCooldown(120);
     } catch (err) {
       if (err.response?.data === 'PHONE_EMAIL_MISMATCH') {
         setMessage('Error: Phone number already in use with a different email address.');
+      } else if (err.response?.data === 'EMAIL_EXISTS') {
+        setMessage('Error: Email ID already exists, please login.');
+      } else if (err.response?.data === 'USER_NOT_FOUND') {
+        setMessage('Error: Account not found, please sign up.');
       } else {
         setMessage('Failed to send OTP. Please check backend.');
-        setOtpSent(true); // Fallback for mock backend
-        setOtpCooldown(120);
+        setOtpCooldown(10);
       }
     } finally {
       setIsSendingOtp(false);
@@ -149,6 +164,48 @@ export default function PublicHome() {
     }
   };
 
+  const handlePasswordLogin = async () => {
+    if (!formData.email || !formData.password) {
+      setMessage('Error: Email and password are required.');
+      return;
+    }
+
+    try {
+      setMessage('Logging in...');
+      const loginRes = await api.post(`/public/customer/login-password`, {
+         email: formData.email,
+         password: formData.password
+      });
+      
+      const token = loginRes.data.token;
+      const cust = loginRes.data.customer;
+      localStorage.setItem('customerToken', token);
+      localStorage.setItem('customerInfo', JSON.stringify(cust));
+      setCustomerToken(token);
+      setCustomerInfo(cust);
+
+      if (selectedProperty) {
+        setMessage('Login successful. Recording interest...');
+        await api.post(`/public/express-interest`, {
+          ...formData,
+          propertyIds: [selectedProperty.id]
+        }, { headers: { Authorization: `Bearer ${token}` } });
+        setMessage('Interest recorded successfully!');
+      } else {
+        setMessage('Login successful!');
+      }
+      setTimeout(() => setShowModal(false), 2000);
+    } catch (err) {
+      if (err.response?.data === 'USER_NOT_FOUND') {
+        setMessage('Error: Account not found, please sign up.');
+      } else if (err.response?.data === 'INVALID_PASSWORD') {
+        setMessage('Error: Invalid password.');
+      } else {
+        setMessage('Error: Login failed.');
+      }
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Navbar */}
@@ -163,7 +220,7 @@ export default function PublicHome() {
               <button onClick={() => { localStorage.removeItem('customerToken'); localStorage.removeItem('customerInfo'); setCustomerToken(null); setCustomerInfo(null); }} className="text-sm text-gray-500 hover:text-red-600 transition">Logout</button>
             </div>
           ) : (
-            <button onClick={() => { setShowModal(true); setSelectedProperty(null); setOtpSent(false); setMessage(''); }} className="text-sm text-gray-600 hover:text-primary-600 font-medium transition">Customer Login</button>
+            <button onClick={() => { setShowModal(true); setModalMode('login'); setLoginMethod('password'); setSelectedProperty(null); setOtpSent(false); setMessage(''); setFormData(prev => ({...prev, password: ''})); }} className="text-sm text-gray-600 hover:text-primary-600 font-medium transition">Customer Login</button>
           )}
           <Link to="/login" className="text-gray-600 hover:text-primary-600 font-medium border-l pl-6 border-gray-200">Employee Portal</Link>
         </div>
@@ -350,18 +407,67 @@ export default function PublicHome() {
       {showModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <h3 className="text-2xl font-bold text-gray-900 mb-4">{selectedProperty ? 'Login to Express Interest' : 'Customer Login / Sign Up'}</h3>
-            {selectedProperty && <p className="text-sm text-gray-500 mb-6">You are interested in: {selectedProperty?.title}</p>}
+            <h3 className="text-2xl font-bold text-gray-900 mb-4">{selectedProperty ? 'Login / Sign Up to Express Interest' : 'Customer Access'}</h3>
+            {selectedProperty && <p className="text-sm text-gray-500 mb-4">You are interested in: {selectedProperty?.title}</p>}
             
-            <div className="space-y-4">
-              <input type="text" placeholder="Full Name" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, name: e.target.value})} />
-              <input type="tel" placeholder="Phone Number" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, phone: e.target.value})} />
-              <div className="flex space-x-2">
-                <input type="email" placeholder="Email Address" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, email: e.target.value})} disabled={otpSent} />
-                <button onClick={handleSendOtp} disabled={otpCooldown > 0 || isSendingOtp} className="bg-primary-600 text-white px-4 rounded-lg whitespace-nowrap disabled:opacity-50">
-                  {isSendingOtp ? 'Sending...' : (otpCooldown > 0 ? `Wait ${otpCooldown}s` : (otpSent ? 'Resend OTP' : 'Send OTP'))}
+            {!otpSent && (
+              <div className="flex mb-6 border-b">
+                <button 
+                  className={`flex-1 py-2 font-medium ${modalMode === 'login' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  onClick={() => { setModalMode('login'); setMessage(''); setOtpSent(false); }}
+                >
+                  Login
+                </button>
+                <button 
+                  className={`flex-1 py-2 font-medium ${modalMode === 'signup' ? 'text-primary-600 border-b-2 border-primary-600' : 'text-gray-500 hover:text-gray-700'}`}
+                  onClick={() => { setModalMode('signup'); setMessage(''); setOtpSent(false); }}
+                >
+                  Sign Up
                 </button>
               </div>
+            )}
+
+            <div className="space-y-4">
+              {modalMode === 'login' && !otpSent && (
+                <div className="flex mb-4 bg-gray-100 p-1 rounded-lg">
+                  <button 
+                    className={`flex-1 py-1.5 text-sm font-medium rounded-md ${loginMethod === 'password' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                    onClick={() => { setLoginMethod('password'); setMessage(''); }}
+                  >
+                    Use Password
+                  </button>
+                  <button 
+                    className={`flex-1 py-1.5 text-sm font-medium rounded-md ${loginMethod === 'otp' ? 'bg-white shadow text-gray-900' : 'text-gray-500'}`}
+                    onClick={() => { setLoginMethod('otp'); setMessage(''); }}
+                  >
+                    Use OTP
+                  </button>
+                </div>
+              )}
+
+              {modalMode === 'signup' && (
+                <>
+                  <input type="text" placeholder="Full Name" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, name: e.target.value})} disabled={otpSent} />
+                  <input type="tel" placeholder="Phone Number" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, phone: e.target.value})} disabled={otpSent} />
+                  <input type="password" placeholder="Create Password (min 8 chars, 1 letter, 1 number)" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, password: e.target.value})} disabled={otpSent} />
+                </>
+              )}
+              
+              <div className="flex space-x-2">
+                <input type="email" placeholder="Email Address" className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, email: e.target.value})} disabled={otpSent} />
+                {(modalMode === 'signup' || (modalMode === 'login' && loginMethod === 'otp')) && (
+                  <button onClick={handleSendOtp} disabled={otpCooldown > 0 || isSendingOtp || otpSent} className="bg-primary-600 text-white px-4 rounded-lg whitespace-nowrap disabled:opacity-50 hover:bg-primary-700">
+                    {isSendingOtp ? 'Sending...' : (otpCooldown > 0 ? `Wait ${otpCooldown}s` : (otpSent ? 'OTP Sent' : 'Send OTP'))}
+                  </button>
+                )}
+              </div>
+
+              {modalMode === 'login' && loginMethod === 'password' && (
+                <>
+                  <input type="password" placeholder="Enter Password" value={formData.password} className="w-full border rounded-lg p-2" onChange={e => setFormData({...formData, password: e.target.value})} />
+                  <button onClick={handlePasswordLogin} className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2 rounded-lg mt-2">Login</button>
+                </>
+              )}
               
               {otpSent && (
                 <div className="animate-fade-in">

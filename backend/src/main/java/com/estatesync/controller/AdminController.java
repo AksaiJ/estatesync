@@ -140,4 +140,17 @@ public class AdminController {
         leadService.deleteLead(id);
         return ResponseEntity.ok().build();
     }
+
+    // --- Password Resets ---
+    @PostMapping("/users/{id}/reset-password")
+    public ResponseEntity<?> resetUserPassword(@PathVariable Long id) {
+        userService.generateAndEmailPassword(id);
+        return ResponseEntity.ok(java.util.Map.of("message", "Password generated and emailed successfully."));
+    }
+
+    @PostMapping("/customers/{id}/reset-password")
+    public ResponseEntity<?> resetCustomerPassword(@PathVariable Long id) {
+        customerService.generateAndEmailPassword(id);
+        return ResponseEntity.ok(java.util.Map.of("message", "Password generated and emailed successfully."));
+    }
 }

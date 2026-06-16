@@ -16,14 +16,17 @@ public class AuthService {
     private final JwtUtil jwtUtil;
     private final com.estatesync.repository.UserRepository userRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
+    private final OtpService otpService;
 
     public AuthService(AuthenticationManager authenticationManager, JwtUtil jwtUtil, 
                        com.estatesync.repository.UserRepository userRepository,
-                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder) {
+                       org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
+                       OtpService otpService) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
+        this.otpService = otpService;
     }
 
     @jakarta.annotation.PostConstruct
@@ -43,5 +46,20 @@ public class AuthService {
         String token = jwtUtil.generateToken(userDetails);
         
         return new AuthResponse(token, userDetails.getUser().getRole().name(), userDetails.getUser().getName());
+    }
+
+    public void sendOtp(String email) {
+        userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        otpService.generateAndSendOtp(email);
+    }
+
+    public AuthResponse verifyOtp(String email, String otp) {
+        if (!otpService.verifyOtp(email, otp)) {
+            throw new IllegalArgumentException("Invalid OTP");
+        }
+        com.estatesync.model.User user = userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        CustomUserDetails userDetails = new CustomUserDetails(user);
+        String token = jwtUtil.generateToken(userDetails);
+        return new AuthResponse(token, user.getRole().name(), user.getName());
     }
 }

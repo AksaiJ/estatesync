@@ -15,11 +15,13 @@ public class UserService {
     private final UserRepository userRepository;
     private final LeadRepository leadRepository;
     private final PasswordEncoder passwordEncoder;
+    private final OtpService otpService;
 
-    public UserService(UserRepository userRepository, LeadRepository leadRepository, PasswordEncoder passwordEncoder) {
+    public UserService(UserRepository userRepository, LeadRepository leadRepository, PasswordEncoder passwordEncoder, OtpService otpService) {
         this.userRepository = userRepository;
         this.leadRepository = leadRepository;
         this.passwordEncoder = passwordEncoder;
+        this.otpService = otpService;
     }
 
     public List<User> getAllUsers() {
@@ -39,7 +41,19 @@ public class UserService {
         user.setEmail(updatedUser.getEmail());
         user.setRole(updatedUser.getRole());
         user.setRegion(updatedUser.getRegion());
+        if (updatedUser.getPasswordHash() != null && !updatedUser.getPasswordHash().isEmpty()) {
+            user.setPasswordHash(passwordEncoder.encode(updatedUser.getPasswordHash()));
+        }
         return userRepository.save(user);
+    }
+
+    @Transactional
+    public void generateAndEmailPassword(Long id) {
+        User user = userRepository.findById(id).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        String plainPassword = java.util.UUID.randomUUID().toString().substring(0, 8);
+        user.setPasswordHash(passwordEncoder.encode(plainPassword));
+        userRepository.save(user);
+        otpService.sendPasswordEmail(user.getEmail(), plainPassword);
     }
 
     @Transactional

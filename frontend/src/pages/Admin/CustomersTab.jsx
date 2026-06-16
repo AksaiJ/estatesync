@@ -7,7 +7,7 @@ export default function CustomersTab() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '' });
+  const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '', password: '' });
 
   useEffect(() => {
     fetchCustomers();
@@ -50,13 +50,24 @@ export default function CustomersTab() {
     }
   };
 
+  const handleGeneratePassword = async (id) => {
+    if (window.confirm("Generate a new password and email it to this customer?")) {
+      try {
+        await api.post(`/admin/customers/${id}/reset-password`);
+        alert("New password generated and emailed successfully.");
+      } catch (err) {
+        alert("Failed to generate password.");
+      }
+    }
+  };
+
   const openModal = (customer = null) => {
     if (customer) {
       setEditingId(customer.id);
-      setFormData(customer);
+      setFormData({...customer, password: ''});
     } else {
       setEditingId(null);
-      setFormData({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '' });
+      setFormData({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '', password: '' });
     }
     setShowModal(true);
   };
@@ -117,6 +128,17 @@ export default function CustomersTab() {
               </div>
               <input type="text" placeholder="Preferred Location" className="w-full border rounded p-2" value={formData.preferredLocation || ''} onChange={e => setFormData({...formData, preferredLocation: e.target.value})} />
               <input type="text" placeholder="Property Type (e.g. Villa)" className="w-full border rounded p-2" value={formData.propertyType || ''} onChange={e => setFormData({...formData, propertyType: e.target.value})} />
+              
+              <div className="pt-4 border-t mt-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Set Password Manually (Optional)</label>
+                <input type="text" placeholder="Leave blank to keep existing password" className="w-full border rounded p-2" value={formData.password} onChange={e => setFormData({...formData, password: e.target.value})} />
+                {editingId && (
+                  <button type="button" onClick={() => handleGeneratePassword(editingId)} className="mt-3 w-full bg-blue-50 text-blue-600 font-medium py-2 rounded border border-blue-100 hover:bg-blue-100 transition">
+                    Generate & Email New Password
+                  </button>
+                )}
+              </div>
+
               <div className="flex justify-end space-x-3 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700">Save</button>

@@ -42,4 +42,16 @@ public class OtpService {
         }
         return false;
     }
+
+    public void sendPasswordEmail(String email, String plainPassword) {
+        SimpleMailMessage message = new SimpleMailMessage();
+        message.setFrom(senderEmail);
+        message.setTo(email);
+        message.setSubject("Important: Your EstateSync Account Password");
+        message.setText("Hello,\n\nYour new EstateSync account password has been generated.\n\n" +
+                        "Password: " + plainPassword + "\n\n" +
+                        "Please login and consider changing your password if needed.\n\n" +
+                        "Regards,\nThe EstateSync Team");
+        mailSender.send(message);
+    }
 }

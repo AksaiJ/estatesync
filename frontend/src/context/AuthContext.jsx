@@ -33,6 +33,21 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const loginWithOtp = async (email, otp) => {
+    try {
+      const response = await api.post('/auth/verify-otp', { email, otp });
+      const { token, role, name } = response.data;
+      localStorage.setItem('token', token);
+      localStorage.setItem('role', role);
+      localStorage.setItem('name', name);
+      setUser({ token, role, name });
+      return role;
+    } catch (error) {
+      console.error('OTP Login failed', error);
+      return false;
+    }
+  };
+
   const logout = () => {
     localStorage.removeItem('token');
     localStorage.removeItem('role');
@@ -41,7 +56,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, login, loginWithOtp, logout, loading }}>
       {children}
     </AuthContext.Provider>
   );
