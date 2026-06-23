@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { Plus, Edit, Trash2, MapPin, Search, X, History } from 'lucide-react';
 import api from '../../services/api';
-import { Edit, Trash2, X } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
+import OpportunityWorkspaceModal from '../Agent/OpportunityWorkspaceModal';
+import Pagination from '../../components/Pagination';
 
 export default function LeadsTab() {
   const [leads, setLeads] = useState([]);
@@ -11,6 +14,7 @@ export default function LeadsTab() {
   const [allSystemProperties, setAllSystemProperties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
+  const [selectedOppForWorkspace, setSelectedOppForWorkspace] = useState(null);
   const [formData, setFormData] = useState({ 
     isNew: false,
     id: null,
@@ -24,40 +28,91 @@ export default function LeadsTab() {
     properties: []
   });
 
+  // Pagination & Filters
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [managerFilter, setManagerFilter] = useState('');
+  const [agentFilter, setAgentFilter] = useState('');
+
   useEffect(() => {
-    fetchData();
+    fetchConstants();
   }, []);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchLeads();
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [currentPage, searchTerm, statusFilter, regionFilter, managerFilter, agentFilter]);
+
+  const fetchConstants = async () => {
     try {
-      const [leadsRes, regionsRes, usersRes, propsRes] = await Promise.all([
-        api.get('/admin/leads'),
+      const [regionsRes, usersRes, propsRes] = await Promise.all([
         api.get('/admin/regions'),
-        api.get('/admin/users'),
-        api.get('/admin/properties')
+        api.get('/admin/users?size=1000'), // Quick hack for static lists, assuming less than 1000 users. Ideally an autocomplete or specific endpoint.
+        api.get('/admin/properties?size=1000') 
       ]);
-      const displayLeads = leadsRes.data.map(lead => ({
-        id: lead.id,
-        createdAt: lead.createdAt,
-        customer: lead.customer,
-        region: lead.region,
-        agent: lead.agent,
-        manager: lead.manager,
-        status: lead.status,
-        interestedPropertiesWithDates: lead.interestedProperties || []
-      }));
-
-      // Sort final display leads by most recent first
-      displayLeads.sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
-
-      setRawLeads(leadsRes.data);
-      setLeads(displayLeads);
       setRegions(regionsRes.data);
-      setAgents(usersRes.data.filter(u => u.role === 'AGENT'));
-      setManagers(usersRes.data.filter(u => u.role === 'MANAGER'));
-      setAllSystemProperties(propsRes.data);
+      const allUsers = usersRes.data.content || usersRes.data; // Fallback in case it's a list or a page
+      const allProps = propsRes.data.content || propsRes.data;
+      setAgents(allUsers.filter(u => u.role === 'AGENT'));
+      setManagers(allUsers.filter(u => u.role === 'MANAGER'));
+      setAllSystemProperties(allProps);
     } catch (err) {
-      console.error("Failed to fetch data", err);
+      console.error("Failed to fetch constants", err);
+    }
+  };
+
+  const fetchLeads = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({ page: currentPage, size: 10 });
+      if (statusFilter) params.append('status', statusFilter);
+      if (regionFilter) params.append('regionId', regionFilter);
+      if (managerFilter) params.append('managerId', managerFilter);
+      if (agentFilter) params.append('agentId', agentFilter);
+      if (searchTerm) params.append('search', searchTerm);
+
+      const res = await api.get(`/admin/leads?${params.toString()}`);
+      
+      const rawLeadsContent = res.data.content || (Array.isArray(res.data) ? res.data : []);
+      const displayLeads = rawLeadsContent.map(lead => {
+        // Map opportunities to the old interested properties structure
+        const mappedProperties = (lead.opportunities || []).map(o => ({
+          ...(o.property || {}),
+          dateOfInterest: o.createdAt,
+          sourceOpportunityId: o.id,
+          fullOpportunity: {
+            ...o,
+            lead: { id: lead.id, customer: lead.customer, manager: lead.manager, region: lead.region }
+          }
+        }));
+        
+        // Find the first assigned agent, if any
+        const firstAgent = lead.opportunities && lead.opportunities.length > 0 
+          ? lead.opportunities.find(o => o.agent)?.agent 
+          : null;
+
+        return {
+          id: lead.id,
+          createdAt: lead.createdAt,
+          customer: lead.customer,
+          region: lead.region,
+          agent: firstAgent,
+          manager: lead.manager,
+          status: lead.status,
+          interestedPropertiesWithDates: mappedProperties
+        };
+      });
+
+      setRawLeads(rawLeadsContent);
+      setLeads(displayLeads);
+      setTotalPages(res.data.totalPages || 1);
+    } catch (err) {
+      console.error("Failed to fetch leads", err);
     } finally {
       setLoading(false);
     }
@@ -85,21 +140,37 @@ export default function LeadsTab() {
         await api.put(`/admin/leads/${formData.id}`, payload);
       }
       setShowModal(false);
-      fetchData();
+      fetchLeads();
     } catch (err) {
       console.error("Save failed", err);
     }
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this lead?")) {
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'confirm', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
+  };
+
+  const showConfirm = (title, message, onConfirmCallback) => {
+    setConfirmConfig({
+      isOpen: true, title, message, type: 'confirm',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirmCallback();
+      }
+    });
+  };
+
+  const handleDelete = (id) => {
+    showConfirm("Confirm Delete", "Are you sure you want to delete this lead?", async () => {
       try {
         await api.delete(`/admin/leads/${id}`);
-        fetchData();
+        fetchLeads();
       } catch (err) {
-        alert("Failed to delete leads.");
+        showAlert("Error", "Failed to delete leads.");
       }
-    }
+    });
   };
 
   const openModal = (displayLead) => {
@@ -156,19 +227,65 @@ export default function LeadsTab() {
   const copyToClipboard = (text) => {
     if (text) {
       navigator.clipboard.writeText(text);
-      alert(`Copied location ID: ${text}`);
+      showAlert('Success', `Copied location ID: ${text}`);
     } else {
-      alert("Location ID not available.");
+      showAlert('Error', "Location ID not available.");
     }
   };
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="p-6 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+      <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 space-y-4 md:space-y-0">
         <h2 className="text-xl font-bold text-gray-900">Manage Leads</h2>
-        <button onClick={() => openModal()} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition">
-          + Add Lead
-        </button>
+        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+          <input 
+            type="text" 
+            placeholder="Search leads..." 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500 w-full sm:w-48"
+            value={searchTerm}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }}
+          />
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Statuses</option>
+            <option value="NEW">NEW</option>
+            <option value="CONTACTED">CONTACTED</option>
+            <option value="QUALIFIED">QUALIFIED</option>
+            <option value="PROPOSAL_SENT">PROPOSAL_SENT</option>
+            <option value="NEGOTIATION">NEGOTIATION</option>
+            <option value="CLOSED">CLOSED</option>
+          </select>
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={regionFilter}
+            onChange={(e) => { setRegionFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Regions</option>
+            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={managerFilter}
+            onChange={(e) => { setManagerFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Managers</option>
+            {managers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+          </select>
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={agentFilter}
+            onChange={(e) => { setAgentFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Agents</option>
+            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+          <button onClick={() => openModal()} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition flex items-center whitespace-nowrap">
+            <Plus size={16} className="mr-2" /> Add Lead
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -210,13 +327,22 @@ export default function LeadsTab() {
                           </span>
                           <span className="text-[10px] text-gray-500 mt-1 flex justify-between items-center">
                             <span>Added: {p.dateOfInterest ? new Date(p.dateOfInterest).toLocaleDateString() : 'N/A'}</span>
-                            <button 
-                              onClick={() => copyToClipboard(p.id)} 
-                              className="text-blue-500 hover:text-blue-700 hover:underline"
-                              title="Copy Location ID"
-                            >
-                              Copy Location ID
-                            </button>
+                            <div className="flex space-x-2">
+                              <button 
+                                onClick={() => copyToClipboard(p.id)} 
+                                className="text-blue-500 hover:text-blue-700 hover:underline"
+                                title="Copy Location ID"
+                              >
+                                Copy ID
+                              </button>
+                              <button 
+                                onClick={() => setSelectedOppForWorkspace(p.fullOpportunity)} 
+                                className="text-primary-600 hover:text-primary-800 hover:underline flex items-center"
+                                title="View Workspace & Schedule Visit"
+                              >
+                                <History size={12} className="mr-1" /> Workspace
+                              </button>
+                            </div>
                           </span>
                         </div>
                       ))}
@@ -256,6 +382,9 @@ export default function LeadsTab() {
             )}
           </tbody>
         </table>
+      </div>
+      <div className="p-4 border-t border-gray-100">
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
       {showModal && (
@@ -342,6 +471,19 @@ export default function LeadsTab() {
           </div>
         </div>
       )}
+      {selectedOppForWorkspace && (
+        <OpportunityWorkspaceModal 
+          opportunity={selectedOppForWorkspace}
+          role="ADMIN"
+          onClose={() => setSelectedOppForWorkspace(null)}
+          onActivityLogged={fetchLeads}
+        />
+      )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

@@ -1,8 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import LeafletMapPreview from '../../components/LeafletMapPreview';
-import { MapPin, DollarSign, Home, Image as ImageIcon, ChevronLeft, ChevronRight, Navigation } from 'lucide-react';
+import { Search, MapPin, Building, Ruler, Calendar, Star, IndianRupee, ShieldCheck, Zap, Video, Home, ArrowRight, User, X, CheckCircle, ChevronRight, Lock, KeyRound, ArrowLeft, Send, Filter, SlidersHorizontal } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
+import Pagination from '../../components/Pagination';
 import { Link } from 'react-router-dom';
+import LeafletMapPreview from '../../components/LeafletMapPreview';
+import { Image as ImageIcon, ChevronLeft, Navigation } from 'lucide-react';
 
 export default function PublicHome() {
   const [properties, setProperties] = useState([]);
@@ -21,6 +24,12 @@ export default function PublicHome() {
   const [modalMode, setModalMode] = useState('login'); // 'login' or 'signup'
   const [loginMethod, setLoginMethod] = useState('password'); // 'password' or 'otp'
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '', password: '' });
+  
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
+  };
   const [otpSent, setOtpSent] = useState(false);
   const [otp, setOtp] = useState('');
   const [message, setMessage] = useState('');
@@ -34,18 +43,53 @@ export default function PublicHome() {
     }
   }, [otpCooldown]);
 
-  useEffect(() => {
-    // In a real app, we'd fetch from api.get('/public/properties')
-    // For this demonstration, we'll mock it if the backend is down
-    api.get('/public/properties').then(res => {
-      setProperties(res.data);
-      setLoading(false);
-    }).catch(err => {
-      console.error("Failed to fetch properties from backend:", err);
+  // Pagination & Filter State
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [search, setSearch] = useState('');
+  
+  const [showFilterModal, setShowFilterModal] = useState(false);
+  const [filterType, setFilterType] = useState('ALL');
+  const [filterMinPrice, setFilterMinPrice] = useState('');
+  const [filterMaxPrice, setFilterMaxPrice] = useState('');
+  const [sortBy, setSortBy] = useState(''); 
+  
+  const [tempMinPrice, setTempMinPrice] = useState('');
+  const [tempMaxPrice, setTempMaxPrice] = useState('');
+  const [tempType, setTempType] = useState('ALL');
+  const [tempSortBy, setTempSortBy] = useState('');
+
+  const fetchProperties = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('page', currentPage);
+      params.append('size', 6);
+      if (search) params.append('search', search);
+      if (filterType !== 'ALL') params.append('type', filterType);
+      if (filterMinPrice) params.append('minPrice', filterMinPrice);
+      if (filterMaxPrice) params.append('maxPrice', filterMaxPrice);
+      if (sortBy) params.append('sort', sortBy);
+
+      const res = await api.get('/public/properties', { params });
+      if (res.data && res.data.content) {
+         setProperties(res.data.content);
+         setTotalPages(res.data.totalPages);
+      } else {
+         setProperties(Array.isArray(res.data) ? res.data : []);
+         setTotalPages(1);
+      }
+    } catch (err) {
+      console.error("Failed to fetch properties:", err);
       setProperties([]);
+    } finally {
       setLoading(false);
-    });
-  }, []);
+    }
+  };
+
+  useEffect(() => {
+    fetchProperties();
+  }, [currentPage, search, filterType, filterMinPrice, filterMaxPrice, sortBy]);
 
   const handleInterest = async (prop) => {
     setSelectedProperty(prop);
@@ -65,7 +109,7 @@ export default function PublicHome() {
             propertyType: prop.type,
             propertyIds: [prop.id]
          }, { headers: { Authorization: `Bearer ${customerToken}` } });
-         alert("Interest recorded successfully! Our agent will contact you soon.");
+         showAlert("Success", "Interest recorded successfully! Our agent will contact you soon.");
       } catch(err) {
          if (err.response?.status === 401 || err.response?.status === 403 || err.response?.data === 'Invalid OTP or Token') {
             localStorage.removeItem('customerToken');
@@ -74,7 +118,7 @@ export default function PublicHome() {
             setCustomerInfo(null);
             setShowModal(true);
          } else {
-            alert("Error: " + (err.response?.data || "Something went wrong"));
+            showAlert("Error", "Error: " + (err.response?.data || "Something went wrong"));
          }
       }
     } else {
@@ -236,11 +280,37 @@ export default function PublicHome() {
           </p>
         </div>
 
+        <div className="flex flex-col sm:flex-row justify-between items-center mb-8 space-y-4 sm:space-y-0">
+          <div className="relative w-full sm:w-96">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={20} />
+            <input 
+              type="text" 
+              placeholder="Search by title or location..."
+              value={search}
+              onChange={(e) => { setSearch(e.target.value); setCurrentPage(0); }}
+              className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none transition shadow-sm text-gray-700 font-medium"
+            />
+          </div>
+          <button 
+            onClick={() => {
+              setTempType(filterType);
+              setTempMinPrice(filterMinPrice);
+              setTempMaxPrice(filterMaxPrice);
+              setTempSortBy(sortBy);
+              setShowFilterModal(true);
+            }}
+            className="flex items-center px-6 py-3 bg-white border border-gray-200 text-gray-700 font-medium rounded-xl hover:bg-gray-50 hover:text-primary-600 transition shadow-sm w-full sm:w-auto justify-center"
+          >
+            <Filter size={18} className="mr-2" /> Filters & Sort
+          </button>
+        </div>
+
         {loading ? (
-          <div className="text-center text-gray-500">Loading properties...</div>
+          <div className="text-center text-gray-500 py-12">Loading properties...</div>
         ) : (
-          <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
-            {properties.map((prop) => (
+          <>
+            <div className="grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+              {properties.map((prop) => (
               <div 
                 key={prop.id} 
                 className="bg-white rounded-xl shadow-md overflow-hidden hover:shadow-xl transition-shadow flex flex-col cursor-pointer group"
@@ -253,6 +323,13 @@ export default function PublicHome() {
                     <div className="w-full h-full flex flex-col items-center justify-center text-gray-400">
                       <Home size={32} className="mb-2" />
                       <span className="text-sm font-medium">No Image Provided</span>
+                    </div>
+                  )}
+                  {prop.status === 'SOLD' && (
+                    <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center z-10 pointer-events-none">
+                      <div className="border-4 border-red-500 text-red-500 text-4xl font-black px-6 py-2 -rotate-12 tracking-widest uppercase bg-white bg-opacity-90 shadow-2xl rounded-sm">
+                        SOLD
+                      </div>
                     </div>
                   )}
                   {prop.imageUrls && prop.imageUrls.length > 1 && (
@@ -283,7 +360,18 @@ export default function PublicHome() {
                 </div>
               </div>
             ))}
-          </div>
+            </div>
+            
+            {totalPages > 1 && (
+              <div className="mt-12 flex justify-center">
+                <Pagination 
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                />
+              </div>
+            )}
+          </>
         )}
       </main>
 
@@ -358,7 +446,138 @@ export default function PublicHome() {
                     </span>
                     About this property
                   </h3>
-                  <p className="text-gray-600 text-base leading-relaxed whitespace-pre-line bg-gray-50 p-5 rounded-xl border border-gray-100">{detailsProperty.description}</p>
+                  <p className="text-gray-600 text-base leading-relaxed whitespace-pre-line bg-gray-50 p-5 rounded-xl border border-gray-100 mb-6">{detailsProperty.description}</p>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 bg-white border border-gray-100 rounded-xl p-5 shadow-sm mb-6">
+                    {detailsProperty.squareFootage != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Total Floor Area (sqft)</p><p className="font-semibold">{detailsProperty.squareFootage}</p></div>
+                    )}
+                    {detailsProperty.parkingSpaces != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Parking Spaces</p><p className="font-semibold">{detailsProperty.parkingSpaces}</p></div>
+                    )}
+                    {detailsProperty.buildDate && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Build Year</p><p className="font-semibold">{detailsProperty.buildDate}</p></div>
+                    )}
+                    {detailsProperty.powerBackupType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Power Backup</p><p className="font-semibold">{detailsProperty.powerBackupType}</p></div>
+                    )}
+                    {detailsProperty.numberOfLifts != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Lifts</p><p className="font-semibold">{detailsProperty.numberOfLifts}</p></div>
+                    )}
+                    {detailsProperty.defectLiabilityPeriod && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Defect Liability</p><p className="font-semibold">{detailsProperty.defectLiabilityPeriod}</p></div>
+                    )}
+                    {detailsProperty.waterStorageCapacityLiters != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Water Storage</p><p className="font-semibold">{detailsProperty.waterStorageCapacityLiters} L</p></div>
+                    )}
+                    {detailsProperty.parkingAreaCapacity != null && (detailsProperty.type === 'COMMERCIAL' || detailsProperty.type === 'Commercial') && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Parking Capacity</p><p className="font-semibold">{detailsProperty.parkingAreaCapacity}</p></div>
+                    )}
+                    {detailsProperty.numberOfBalconies != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Balconies</p><p className="font-semibold">{detailsProperty.numberOfBalconies}</p></div>
+                    )}
+                    {detailsProperty.poolAccessType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Pool Access</p><p className="font-semibold">{detailsProperty.poolAccessType}</p></div>
+                    )}
+                    {detailsProperty.poolSizeSqft != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Pool Size (sqft)</p><p className="font-semibold">{detailsProperty.poolSizeSqft}</p></div>
+                    )}
+                    {detailsProperty.terraceAccessType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Terrace Access</p><p className="font-semibold">{detailsProperty.terraceAccessType}</p></div>
+                    )}
+                    {detailsProperty.terraceAreaSqft != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Terrace Area (sqft)</p><p className="font-semibold">{detailsProperty.terraceAreaSqft}</p></div>
+                    )}
+                    {detailsProperty.garageOutletAccessType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Garage Outlet</p><p className="font-semibold">{detailsProperty.garageOutletAccessType}</p></div>
+                    )}
+                    {detailsProperty.garageOutletCapacityVa != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Garage Outlet VA</p><p className="font-semibold">{detailsProperty.garageOutletCapacityVa} VA</p></div>
+                    )}
+                    
+                    {/* Residential specifics */}
+                    {detailsProperty.numberOfBedrooms != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Bedrooms</p><p className="font-semibold">{detailsProperty.numberOfBedrooms}</p></div>
+                    )}
+                    {detailsProperty.numberOfBathrooms != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Bathrooms</p><p className="font-semibold">{detailsProperty.numberOfBathrooms}</p></div>
+                    )}
+                    {detailsProperty.furnishingStatus && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Furnishing</p><p className="font-semibold text-sm">{detailsProperty.furnishingStatus.replace('_', ' ')}</p></div>
+                    )}
+                    {detailsProperty.petPolicy && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Pet Policy</p><p className="font-semibold text-sm">{detailsProperty.petPolicy.replace('_', ' ')}</p></div>
+                    )}
+                    {detailsProperty.kitchenType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Kitchen Type</p><p className="font-semibold text-sm">{detailsProperty.kitchenType.replace('_', ' ')}</p></div>
+                    )}
+                    {detailsProperty.numberOfKitchens != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Kitchens</p><p className="font-semibold">{detailsProperty.numberOfKitchens}</p></div>
+                    )}
+                    
+                    {/* Commercial specifics */}
+                    {detailsProperty.zoningType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Zoning</p><p className="font-semibold">{detailsProperty.zoningType.replace('_', ' ')}</p></div>
+                    )}
+                    {detailsProperty.hvacSystemType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">HVAC</p><p className="font-semibold">{detailsProperty.hvacSystemType}</p></div>
+                    )}
+                    {detailsProperty.maxFloorLoadKgPerSqm != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Max Floor Load</p><p className="font-semibold">{detailsProperty.maxFloorLoadKgPerSqm} kg/sqm</p></div>
+                    )}
+                    {detailsProperty.cafeteriaAccessType && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Cafeteria Access</p><p className="font-semibold">{detailsProperty.cafeteriaAccessType.replace('_', ' ')}</p></div>
+                    )}
+                    {detailsProperty.cafeteriaSizeSqft != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Cafeteria Size</p><p className="font-semibold">{detailsProperty.cafeteriaSizeSqft} sqft</p></div>
+                    )}
+                    {detailsProperty.loadingDockCount != null && (
+                      <div><p className="text-xs text-gray-500 uppercase tracking-wider font-bold mb-1">Loading Docks</p><p className="font-semibold">{detailsProperty.loadingDockCount}</p></div>
+                    )}
+
+                    <div className="col-span-full grid grid-cols-2 gap-4 mt-2 pt-4 border-t border-gray-100">
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${detailsProperty.fireSafetyCompliance ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <span className="text-sm font-medium text-gray-700">Fire Safety {detailsProperty.fireSafetyComplianceDate && `(${detailsProperty.fireSafetyComplianceDate})`}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${detailsProperty.pestControlDone ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <span className="text-sm font-medium text-gray-700">Pest Control {detailsProperty.lastPestControlDate && `(${detailsProperty.lastPestControlDate})`}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${detailsProperty.hasPipedGas ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <span className="text-sm font-medium text-gray-700">Piped Gas</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <div className={`w-3 h-3 rounded-full ${detailsProperty.hasCctvSurveillance ? 'bg-green-500' : 'bg-gray-300'}`}></div>
+                        <span className="text-sm font-medium text-gray-700">CCTV Surveillance</span>
+                      </div>
+                      {detailsProperty.hasMaidsRoom && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span className="text-sm font-medium text-gray-700">Maid's Room</span>
+                        </div>
+                      )}
+                      {detailsProperty.hasIntercom && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span className="text-sm font-medium text-gray-700">Intercom</span>
+                        </div>
+                      )}
+                      {detailsProperty.hasFreightElevator && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span className="text-sm font-medium text-gray-700">Freight Elevator</span>
+                        </div>
+                      )}
+                      {detailsProperty.hasWatchmanRoom && (
+                        <div className="flex items-center space-x-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500"></div>
+                          <span className="text-sm font-medium text-gray-700">Watchman Room</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 {detailsProperty.lat && detailsProperty.lng && (
@@ -388,15 +607,24 @@ export default function PublicHome() {
               </div>
               
               <div className="p-5 md:p-6 border-t border-gray-100 bg-white shadow-[0_-10px_30px_-15px_rgba(0,0,0,0.05)] shrink-0 z-10">
-                <button 
-                  onClick={() => {
-                    setShowDetailsModal(false);
-                    handleInterest(detailsProperty);
-                  }}
-                  className="w-full bg-dark-900 hover:bg-black text-white font-bold py-3.5 px-10 rounded-xl transition shadow-lg hover:shadow-xl text-lg flex items-center justify-center"
-                >
-                  Express Interest ➔
-                </button>
+                {detailsProperty.status === 'SOLD' ? (
+                  <button 
+                    disabled
+                    className="w-full bg-gray-300 text-gray-600 font-bold py-3.5 px-10 rounded-xl cursor-not-allowed shadow-inner text-lg flex items-center justify-center"
+                  >
+                    This property has been sold
+                  </button>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      setShowDetailsModal(false);
+                      handleInterest(detailsProperty);
+                    }}
+                    className="w-full bg-dark-900 hover:bg-black text-white font-bold py-3.5 px-10 rounded-xl transition shadow-lg hover:shadow-xl text-lg flex items-center justify-center"
+                  >
+                    Express Interest ➔
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -482,6 +710,117 @@ export default function PublicHome() {
           </div>
         </div>
       )}
+      {/* Filter Modal */}
+      {showFilterModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-2xl relative animate-fade-in">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-xl font-bold flex items-center text-gray-900"><SlidersHorizontal className="mr-2 text-primary-600" /> Filters & Sort</h3>
+              <button onClick={() => setShowFilterModal(false)} className="text-gray-400 hover:text-gray-600 transition">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="space-y-6">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Property Type</label>
+                <select 
+                  className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 font-medium"
+                  value={tempType} onChange={e => setTempType(e.target.value)}
+                >
+                  <option value="ALL">All Types</option>
+                  <option value="RESIDENTIAL">Residential</option>
+                  <option value="COMMERCIAL">Commercial</option>
+                  <option value="LAND">Land</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2 flex justify-between">
+                  <span>Price Range</span>
+                  <span className="text-primary-600 font-bold">
+                    {tempMaxPrice ? `Up to ₹${parseInt(tempMaxPrice).toLocaleString()}` : 'Any'}
+                  </span>
+                </label>
+                
+                <input 
+                  type="range" 
+                  min="0" 
+                  max="50000000" 
+                  step="500000"
+                  value={tempMaxPrice || 50000000}
+                  onChange={e => setTempMaxPrice(e.target.value)}
+                  className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-primary-600 mb-4"
+                />
+
+                <div className="flex space-x-4">
+                  <div className="flex-1">
+                    <span className="text-xs text-gray-500 mb-1 block">Min Price (₹)</span>
+                    <input 
+                      type="number" 
+                      placeholder="Min" 
+                      className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 font-medium"
+                      value={tempMinPrice} onChange={e => setTempMinPrice(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <span className="text-xs text-gray-500 mb-1 block">Max Price (₹)</span>
+                    <input 
+                      type="number" 
+                      placeholder="Max" 
+                      className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 font-medium"
+                      value={tempMaxPrice} onChange={e => setTempMaxPrice(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                <select 
+                  className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 font-medium"
+                  value={tempSortBy} onChange={e => setTempSortBy(e.target.value)}
+                >
+                  <option value="">Default (Newest First)</option>
+                  <option value="price,asc">Price: Low to High</option>
+                  <option value="price,desc">Price: High to Low</option>
+                  <option value="title,asc">Name: A to Z</option>
+                  <option value="title,desc">Name: Z to A</option>
+                </select>
+              </div>
+
+              <div className="pt-4 border-t border-gray-100 flex justify-end space-x-3">
+                <button 
+                  onClick={() => {
+                    setTempType('ALL'); setTempMinPrice(''); setTempMaxPrice(''); setTempSortBy('');
+                  }}
+                  className="px-5 py-2.5 text-gray-600 hover:bg-gray-50 rounded-xl font-medium transition"
+                >
+                  Clear All
+                </button>
+                <button 
+                  onClick={() => {
+                    setFilterType(tempType);
+                    setFilterMinPrice(tempMinPrice);
+                    setFilterMaxPrice(tempMaxPrice);
+                    setSortBy(tempSortBy);
+                    setCurrentPage(0);
+                    setShowFilterModal(false);
+                  }}
+                  className="px-6 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-medium shadow-sm transition"
+                >
+                  Apply Filters
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

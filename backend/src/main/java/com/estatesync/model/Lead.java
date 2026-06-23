@@ -21,24 +21,12 @@ public class Lead {
     private Customer customer;
 
     @ManyToOne(fetch = FetchType.EAGER)
-    @JoinColumn(name = "agent_id")
-    private User agent;
-
-    @ManyToOne(fetch = FetchType.EAGER)
     @JoinColumn(name = "manager_id")
     private User manager;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private LeadStatus status = LeadStatus.NEW;
-
-    @ManyToMany(fetch = FetchType.LAZY)
-    @JoinTable(
-        name = "lead_interests",
-        joinColumns = @JoinColumn(name = "lead_id"),
-        inverseJoinColumns = @JoinColumn(name = "property_id")
-    )
-    private Set<Property> interestedProperties;
+    private LeadStatus status = LeadStatus.OPEN;
 
     @Column(name = "created_at", insertable = false, updatable = false)
     private LocalDateTime createdAt;
@@ -50,7 +38,7 @@ public class Lead {
     @JoinColumn(name = "region_id")
     private Region region;
 
-    @JsonIgnore
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties("lead")
     @OneToMany(mappedBy = "lead", cascade = CascadeType.ALL, orphanRemoval = true)
-    private java.util.List<LeadHistory> histories;
+    private java.util.List<Opportunity> opportunities;
 }

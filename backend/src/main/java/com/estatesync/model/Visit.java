@@ -13,12 +13,8 @@ public class Visit {
     private Long id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "lead_id", nullable = false)
-    private Lead lead;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "property_id", nullable = false)
-    private Property property;
+    @JoinColumn(name = "opportunity_id", nullable = false)
+    private Opportunity opportunity;
 
     @Column(name = "visit_date", nullable = false)
     private LocalDateTime visitDate;

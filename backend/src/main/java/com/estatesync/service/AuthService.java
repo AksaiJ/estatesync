@@ -62,4 +62,13 @@ public class AuthService {
         String token = jwtUtil.generateToken(userDetails);
         return new AuthResponse(token, user.getRole().name(), user.getName());
     }
+
+    public void resetPassword(String email, String currentPassword, String newPassword) {
+        com.estatesync.model.User user = userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("User not found"));
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Incorrect current password");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
 }

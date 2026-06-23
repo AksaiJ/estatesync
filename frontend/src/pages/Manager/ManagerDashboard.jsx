@@ -1,158 +1,159 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import api from '../../services/api';
-import { Users, CheckCircle, Search, Filter, Activity, TrendingUp, History, Plus, X } from 'lucide-react';
+import { Users, CheckCircle, Search, Filter, Activity, TrendingUp, History, Plus, X, ChevronDown, ChevronRight, Building, Calendar } from 'lucide-react';
+import VisitsTab from '../../components/VisitsTab';
+import OpportunityWorkspaceModal from '../Agent/OpportunityWorkspaceModal';
+import AgentAuthorizations from './AgentAuthorizations';
+import ConfirmModal from '../../components/ConfirmModal';
+import Pagination from '../../components/Pagination';
 
 export default function ManagerDashboard() {
   const [leads, setLeads] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [kpis, setKpis] = useState({
+    totalOpps: 0,
+    unassignedOpps: 0,
+    closedOpps: 0,
+    conversionRate: 0,
+    agentPerformance: []
+  });
   const [loading, setLoading] = useState(true);
+
+  const location = useLocation();
+  const activeTab = location.pathname.includes('/manager/visits') ? 'visits' : 
+                    location.pathname.includes('/manager/authorizations') ? 'authorizations' : 'leads';
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
-  const [agentFilter, setAgentFilter] = useState('');
-
-  // Modals
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newLeadForm, setNewLeadForm] = useState({ customerName: '', customerPhone: '', customerEmail: '', agentId: '' });
   
+  // Pagination
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+
+  // Expanded rows
+  const [expandedLeads, setExpandedLeads] = useState(new Set());
+
+  // Workspace Modal
   const [showHistoryModal, setShowHistoryModal] = useState(false);
-  const [selectedLeadHistory, setSelectedLeadHistory] = useState([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
+  const [selectedOppForHistory, setSelectedOppForHistory] = useState(null);
 
   useEffect(() => {
-    fetchData();
+    fetchConstants();
   }, []);
 
-  const fetchData = async () => {
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchLeads();
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [currentPage, searchQuery, statusFilter]);
+
+  const fetchConstants = async () => {
     try {
-      const [leadsRes, agentsRes] = await Promise.all([
-        api.get('/manager/leads'),
-        api.get('/manager/agents')
+      const [agentsRes, kpisRes] = await Promise.all([
+        api.get('/manager/agents'),
+        api.get('/manager/kpis')
       ]);
-      setLeads(leadsRes.data);
       setAgents(agentsRes.data);
+      setKpis(kpisRes.data);
     } catch (err) {
-      console.error("Failed to fetch dashboard data", err);
+      console.error("Failed to fetch constants", err);
+    }
+  };
+
+  const fetchLeads = async () => {
+    try {
+      setLoading(true);
+      const params = new URLSearchParams({ page: currentPage, size: 10 });
+      if (searchQuery) params.append('search', searchQuery);
+      if (statusFilter) params.append('status', statusFilter);
+
+      const leadsRes = await api.get(`/manager/leads?${params.toString()}`);
+      setLeads(leadsRes.data.content || (Array.isArray(leadsRes.data) ? leadsRes.data : []));
+      setTotalPages(leadsRes.data.totalPages || 1);
+    } catch (err) {
+      console.error("Failed to fetch leads data", err);
     } finally {
       setLoading(false);
     }
   };
 
-  const assignAgent = async (leadId, agentId) => {
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
+  };
+
+  const assignAgent = async (opportunityId, agentId) => {
     if (!agentId) return;
     try {
-      await api.post('/manager/assign-lead', { leadId, agentId: Number(agentId) });
-      fetchData();
+      await api.post('/manager/assign-lead', { opportunityId, agentId: Number(agentId) });
+      fetchLeads();
+      // Re-fetch KPIs to reflect assignment changes
+      api.get('/manager/kpis').then(res => setKpis(res.data)).catch(console.error);
     } catch (err) {
-      alert("Failed to assign agent");
+      showAlert("Error", "Failed to assign agent: " + (err.response?.data || err.message));
     }
   };
 
-  const handleCreateLead = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post('/manager/lead', {
-        ...newLeadForm,
-        agentId: newLeadForm.agentId ? Number(newLeadForm.agentId) : null
-      });
-      setShowCreateModal(false);
-      setNewLeadForm({ customerName: '', customerPhone: '', customerEmail: '', agentId: '' });
-      fetchData();
-    } catch (err) {
-      alert("Failed to create lead");
+  const openHistory = (oppId) => {
+    const lead = leads.find(l => l.opportunities?.some(o => o.id === oppId));
+    if (lead) {
+      const opp = lead.opportunities.find(o => o.id === oppId);
+      setSelectedOppForHistory({ ...opp, lead });
+      setShowHistoryModal(true);
     }
   };
 
-  const openHistory = async (leadId) => {
-    setShowHistoryModal(true);
-    setHistoryLoading(true);
-    setSelectedLeadHistory([]);
-    try {
-      const res = await api.get(`/manager/lead/${leadId}/history`);
-      setSelectedLeadHistory(res.data);
-    } catch (err) {
-      console.error("Failed to fetch history");
-    } finally {
-      setHistoryLoading(false);
-    }
+  const toggleExpand = (leadId) => {
+    const newExpanded = new Set(expandedLeads);
+    if (newExpanded.has(leadId)) newExpanded.delete(leadId);
+    else newExpanded.add(leadId);
+    setExpandedLeads(newExpanded);
   };
 
-  // Derived KPIs
-  const totalLeads = leads.length;
-  const unassignedLeads = leads.filter(l => !l.agent).length;
-  const closedLeads = leads.filter(l => l.status === 'CLOSED').length;
-  const conversionRate = totalLeads > 0 ? ((closedLeads / totalLeads) * 100).toFixed(1) : 0;
-
-  // Agent Performance
-  const agentPerformance = agents.map(agent => {
-    const agentLeads = leads.filter(l => l.agent && l.agent.id === agent.id);
-    const agentClosed = agentLeads.filter(l => l.status === 'CLOSED').length;
-    return {
-      ...agent,
-      totalAssigned: agentLeads.length,
-      closed: agentClosed,
-      conversion: agentLeads.length > 0 ? ((agentClosed / agentLeads.length) * 100).toFixed(1) : 0
-    };
-  });
-
-  // Filtered Leads
-  const filteredLeads = leads.filter(lead => {
-    const matchesSearch = lead.customer?.name?.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          lead.customer?.phone?.includes(searchQuery);
-    const matchesStatus = statusFilter ? lead.status === statusFilter : true;
-    const matchesAgent = agentFilter ? (lead.agent?.id?.toString() === agentFilter) : true;
-    return matchesSearch && matchesStatus && matchesAgent;
-  });
-
-  // Helper for parsing date from spring boot if needed
-  const formatDate = (dateValue) => {
-    if (!dateValue) return "Unknown date";
-    if (Array.isArray(dateValue)) {
-      // Jackson sometimes sends [yyyy, M, d, H, m, s]
-      return new Date(dateValue[0], dateValue[1]-1, dateValue[2], dateValue[3]||0, dateValue[4]||0, dateValue[5]||0).toLocaleString();
-    }
-    return new Date(dateValue).toLocaleString();
-  };
+  // Backend KPIs
+  const { totalOpps, unassignedOpps, conversionRate, agentPerformance } = kpis;
 
   return (
     <div className="space-y-6">
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Activity size={24}/></div>
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Total Leads</p>
-            <p className="text-2xl font-bold text-gray-900">{totalLeads}</p>
+      {activeTab === 'leads' && (
+        <>
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-lg"><Activity size={24}/></div>
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Total Opportunities</p>
+                <p className="text-2xl font-bold text-gray-900">{totalOpps}</p>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
+              <div className="p-3 bg-yellow-50 text-yellow-600 rounded-lg"><Users size={24}/></div>
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Unassigned Opps</p>
+                <p className="text-2xl font-bold text-gray-900">{unassignedOpps}</p>
+              </div>
+            </div>
+            <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
+              <div className="p-3 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={24}/></div>
+              <div>
+                <p className="text-sm text-gray-500 font-medium">Conversion Rate</p>
+                <p className="text-2xl font-bold text-gray-900">{conversionRate}%</p>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-yellow-50 text-yellow-600 rounded-lg"><Users size={24}/></div>
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Unassigned Leads</p>
-            <p className="text-2xl font-bold text-gray-900">{unassignedLeads}</p>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-xl border border-gray-100 shadow-sm flex items-center space-x-4">
-          <div className="p-3 bg-green-50 text-green-600 rounded-lg"><TrendingUp size={24}/></div>
-          <div>
-            <p className="text-sm text-gray-500 font-medium">Conversion Rate</p>
-            <p className="text-2xl font-bold text-gray-900">{conversionRate}%</p>
-          </div>
-        </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Leads Table (2/3 width) */}
-        <div className="lg:col-span-2 bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+        {/* Main Leads Table (100% width now) */}
+        <div className="xl:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6 overflow-hidden flex flex-col h-full">
           <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center"><Users className="mr-2 text-primary-600"/> Regional Leads</h2>
-            <button 
-              onClick={() => setShowCreateModal(true)}
-              className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg text-sm font-medium flex items-center transition-colors"
-            >
-              <Plus size={16} className="mr-2"/> Create Lead
-            </button>
+            <h2 className="text-xl font-bold text-gray-900 flex items-center"><Users className="mr-2 text-primary-600"/> Parent Leads</h2>
+            <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-md font-medium">
+              Click any row to expand and assign Opportunities
+            </div>
           </div>
 
           <div className="flex flex-wrap gap-4 mb-6">
@@ -160,188 +161,154 @@ export default function ManagerDashboard() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
               <input 
                 type="text" 
-                placeholder="Search by name or phone..." 
+                placeholder="Search by customer name or phone..." 
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(0); }}
               />
             </div>
-            <div className="flex gap-4">
-              <select 
-                className="border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white"
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-              >
-                <option value="">All Statuses</option>
-                <option value="NEW">New</option>
-                <option value="CONTACTED">Contacted</option>
-                <option value="QUALIFIED">Qualified</option>
-                <option value="PROPOSAL_SENT">Proposal Sent</option>
-                <option value="NEGOTIATION">Negotiation</option>
-                <option value="VISIT_SCHEDULED">Visit Scheduled</option>
-                <option value="CLOSED">Closed</option>
-              </select>
-              <select 
-                className="border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white"
-                value={agentFilter}
-                onChange={(e) => setAgentFilter(e.target.value)}
-              >
-                <option value="">All Agents</option>
-                {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
+            <select 
+              className="border border-gray-300 rounded-lg px-4 py-2 outline-none focus:ring-2 focus:ring-primary-500 transition-shadow bg-white"
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(0); }}
+            >
+              <option value="">All Lead Statuses</option>
+              <option value="OPEN">Open</option>
+              <option value="CLOSED">Closed</option>
+            </select>
           </div>
           
-          {loading ? <p className="text-gray-500 py-4">Loading leads...</p> : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Customer</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Assigned Agent</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+          <div className="flex-1 overflow-auto">
+            {loading ? <p className="text-gray-500 py-4">Loading leads...</p> : (
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-y border-gray-200">
+                    <th className="py-3 px-4 font-medium w-10"></th>
+                    <th className="py-3 px-4 font-medium">Customer</th>
+                    <th className="py-3 px-4 font-medium">Status</th>
+                    <th className="py-3 px-4 font-medium text-right">Opportunities</th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {filteredLeads.map((lead) => (
-                    <tr key={lead.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900">{lead.customer?.name}</div>
-                        <div className="text-sm text-gray-500">{lead.customer?.phone}</div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${lead.status === 'NEW' ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
-                          {lead.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm">
-                        <div className="flex items-center space-x-2">
-                          {lead.agent && <CheckCircle size={16} className="text-green-600" />}
-                          <select 
-                            className="border border-gray-300 rounded p-1 outline-none focus:border-primary-500 bg-white"
-                            onChange={(e) => assignAgent(lead.id, e.target.value)}
-                            value={lead.agent ? lead.agent.id : ""}
-                          >
-                            <option value="" disabled>Select Agent</option>
-                            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                          </select>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        <button onClick={() => openHistory(lead.id)} className="text-primary-600 hover:text-primary-800 flex items-center p-2 rounded-lg hover:bg-primary-50 transition-colors" title="View History">
-                          <History size={18} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {filteredLeads.length === 0 && (
+                <tbody className="divide-y divide-gray-100">
+                  {leads.map((lead) => {
+                    const isExpanded = expandedLeads.has(lead.id);
+                    const opps = lead.opportunities || [];
+                    return (
+                      <React.Fragment key={lead.id}>
+                        <tr className="hover:bg-gray-50 transition-colors group cursor-pointer" onClick={() => toggleExpand(lead.id)}>
+                          <td className="py-4 px-4 text-gray-400">
+                            {isExpanded ? <ChevronDown size={20} /> : <ChevronRight size={20} />}
+                          </td>
+                          <td className="py-4 px-4">
+                            <div className="font-bold text-gray-900">{lead.customer?.name}</div>
+                            <div className="text-sm text-gray-500">{lead.customer?.phone} • {lead.customer?.email}</div>
+                          </td>
+                          <td className="py-4 px-4">
+                            <span className={`px-2 py-1 text-xs font-semibold rounded-full ${lead.status === 'OPEN' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
+                              {lead.status}
+                            </span>
+                          </td>
+                          <td className="py-4 px-4 text-right">
+                            <span className={`inline-flex items-center text-sm font-semibold px-2.5 py-0.5 rounded-full ${opps.some(o => !o.agent) ? 'bg-yellow-100 text-yellow-800 border border-yellow-200' : 'text-gray-700 bg-gray-100'}`}>
+                              <Building size={14} className="mr-1 text-gray-400" /> {opps.length}
+                            </span>
+                          </td>
+                        </tr>
+                        
+                        {/* Expanded Opportunities View */}
+                        {isExpanded && (
+                          <tr className="bg-gray-50/50">
+                            <td colSpan="4" className="p-0 border-b border-gray-200">
+                              <div className="pl-14 pr-4 py-4 bg-gradient-to-r from-gray-50 to-white shadow-inner border-l-4 border-l-primary-500">
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 mb-3">Opportunities Assignment</h4>
+                                {opps.length === 0 ? (
+                                  <p className="text-sm text-gray-500 italic">No properties assigned to this lead.</p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {opps.map(opp => (
+                                      <div key={opp.id} className="flex items-center justify-between bg-white p-3 rounded-lg border border-gray-200 shadow-sm">
+                                        <div className="flex-1">
+                                          <div className="font-semibold text-gray-900">{opp.property?.title}</div>
+                                          <div className="text-xs text-gray-500 flex gap-2 mt-1">
+                                            <span className="bg-gray-100 px-2 py-0.5 rounded">{opp.property?.type}</span>
+                                            <span className="font-medium text-primary-600">${opp.property?.price?.toLocaleString()}</span>
+                                          </div>
+                                        </div>
+                                        
+                                        <div className="w-32 mr-4">
+                                           <span className={`px-2 py-1 text-[10px] font-bold uppercase tracking-wider rounded-full border 
+                                              ${opp.status === 'CLOSED' ? 'bg-gray-100 text-gray-600 border-gray-200' : 'bg-blue-50 text-blue-700 border-blue-200'}`}>
+                                              {opp.status}
+                                            </span>
+                                        </div>
+
+                                        <div className="flex items-center space-x-3 w-64">
+                                          <select 
+                                            className={`flex-1 border rounded p-1.5 text-sm outline-none shadow-sm ${!opp.agent ? 'border-yellow-400 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 bg-yellow-50' : 'border-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 bg-white'}`}
+                                            onChange={(e) => assignAgent(opp.id, e.target.value)}
+                                            value={opp.agent ? opp.agent.id : ""}
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <option value="" disabled>Assign Agent...</option>
+                                            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                                          </select>
+                                          
+                                          <button 
+                                            onClick={(e) => { e.stopPropagation(); openHistory(opp.id); }} 
+                                            className="text-gray-400 hover:text-primary-600 p-1.5 rounded hover:bg-primary-50 transition-colors" 
+                                            title="View Timeline & Workspace"
+                                          >
+                                            <History size={18} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                  {leads.length === 0 && (
                     <tr>
                       <td colSpan="4" className="text-center py-8 text-gray-500">No leads found matching your criteria.</td>
                     </tr>
                   )}
                 </tbody>
               </table>
-            </div>
-          )}
-        </div>
-
-        {/* Agent Performance (1/3 width) */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 h-fit">
-          <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center"><Activity className="mr-2 text-primary-600"/> Agent Performance</h2>
-          <div className="space-y-4">
-            {agentPerformance.map(agent => (
-              <div key={agent.id} className="p-4 rounded-lg border border-gray-100 bg-gray-50 flex flex-col space-y-2 hover:border-primary-200 transition-colors">
-                <div className="flex justify-between items-center">
-                  <span className="font-medium text-gray-900">{agent.name}</span>
-                  <span className="text-xs bg-white px-2 py-1 rounded border border-gray-200 font-semibold text-primary-700 shadow-sm">{agent.conversion}% closed</span>
-                </div>
-                <div className="flex justify-between text-sm text-gray-500">
-                  <span className="flex items-center"><Users size={14} className="mr-1"/> Assigned: {agent.totalAssigned}</span>
-                  <span className="flex items-center"><CheckCircle size={14} className="mr-1"/> Won: {agent.closed}</span>
-                </div>
-              </div>
-            ))}
-            {agents.length === 0 && <p className="text-gray-500 text-sm py-4 text-center">No agents available.</p>}
+            )}
+          </div>
+          <div className="p-4 border-t border-gray-100 mt-auto">
+            <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
           </div>
         </div>
       </div>
-
-      {/* Create Lead Modal */}
-      {showCreateModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-xl max-w-md w-full p-6 relative shadow-xl">
-            <button onClick={() => setShowCreateModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
-              <X size={20}/>
-            </button>
-            <h2 className="text-xl font-bold text-gray-900 mb-6">Create New Lead</h2>
-            <form onSubmit={handleCreateLead} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
-                <input required type="text" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow" 
-                  value={newLeadForm.customerName} onChange={e => setNewLeadForm({...newLeadForm, customerName: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Phone Number *</label>
-                <input required type="tel" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow" 
-                  value={newLeadForm.customerPhone} onChange={e => setNewLeadForm({...newLeadForm, customerPhone: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email (Optional)</label>
-                <input type="email" className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow" 
-                  value={newLeadForm.customerEmail} onChange={e => setNewLeadForm({...newLeadForm, customerEmail: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Assign Agent (Optional)</label>
-                <select className="w-full border border-gray-300 rounded-lg p-2.5 focus:ring-2 focus:ring-primary-500 outline-none transition-shadow bg-white"
-                  value={newLeadForm.agentId} onChange={e => setNewLeadForm({...newLeadForm, agentId: e.target.value})} >
-                  <option value="">Do not assign yet</option>
-                  {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-              <button type="submit" className="w-full bg-primary-600 hover:bg-primary-700 text-white font-medium py-2.5 rounded-lg mt-6 transition-colors shadow-sm">
-                Create Lead
-              </button>
-            </form>
-          </div>
-        </div>
+      </>
       )}
 
-      {/* History Modal */}
-      {showHistoryModal && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-opacity">
-          <div className="bg-white rounded-xl max-w-lg w-full p-6 relative max-h-[80vh] overflow-y-auto shadow-xl">
-            <button onClick={() => setShowHistoryModal(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors">
-              <X size={20}/>
-            </button>
-            <h2 className="text-xl font-bold text-gray-900 mb-6 flex items-center"><History className="mr-2 text-primary-600"/> Lead History</h2>
-            {historyLoading ? (
-              <div className="py-8 text-center text-gray-500">Loading history...</div>
-            ) : selectedLeadHistory.length === 0 ? (
-              <div className="py-8 text-center text-gray-500">No assignment history found for this lead.</div>
-            ) : (
-              <div className="space-y-6">
-                {selectedLeadHistory.map((hist, idx) => (
-                  <div key={idx} className="relative pl-6 before:absolute before:left-2 before:top-2 before:bottom-[-24px] last:before:bottom-0 before:w-0.5 before:bg-gray-200">
-                    <div className="absolute left-1 top-2 w-2.5 h-2.5 bg-primary-500 rounded-full ring-4 ring-white"></div>
-                    <div className="bg-gray-50 p-4 rounded-lg border border-gray-100">
-                      <p className="text-xs text-gray-500 mb-2 font-medium">
-                        {formatDate(hist.changedAt)}
-                      </p>
-                      <p className="text-gray-900 text-sm">
-                        Assigned to <span className="font-semibold text-primary-700">{hist.newAgent?.name || 'Unassigned'}</span>
-                      </p>
-                      <p className="text-xs text-gray-600 mt-1">
-                        Previous: {hist.prevAgent?.name || 'Unassigned'} • Changed by {hist.changedBy?.name}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
+      {/* Workspace Modal (Read-Only) */}
+      {showHistoryModal && selectedOppForHistory && (
+        <OpportunityWorkspaceModal 
+          opportunity={selectedOppForHistory} 
+          role="MANAGER" 
+          onClose={() => { setShowHistoryModal(false); setSelectedOppForHistory(null); }} 
+        />
       )}
+
+      {activeTab === 'visits' && (
+        <VisitsTab role="MANAGER" />
+      )}
+      {activeTab === 'authorizations' && (
+        <AgentAuthorizations />
+      )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

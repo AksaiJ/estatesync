@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { Edit, Trash2, Plus } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function RegionsTab() {
   const [regions, setRegions] = useState([]);
@@ -24,30 +25,48 @@ export default function RegionsTab() {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        await api.put(`/admin/regions/${editingId}`, formData);
-      } else {
-        await api.post('/admin/regions', formData);
-      }
-      setShowModal(false);
-      fetchRegions();
-    } catch (err) {
-      console.error("Save failed", err);
-    }
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'confirm', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this region?")) {
+  const showConfirm = (title, message, onConfirmCallback) => {
+    setConfirmConfig({
+      isOpen: true, title, message, type: 'confirm',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirmCallback();
+      }
+    });
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    showConfirm("Confirm Save", "Are you sure you want to save this region?", async () => {
+      try {
+        if (editingId) {
+          await api.put(`/admin/regions/${editingId}`, formData);
+        } else {
+          await api.post('/admin/regions', formData);
+        }
+        setShowModal(false);
+        fetchRegions();
+      } catch (err) {
+        showAlert("Error", "Save failed");
+      }
+    });
+  };
+
+  const handleDelete = (id) => {
+    showConfirm("Confirm Delete", "Are you sure you want to delete this region?", async () => {
       try {
         await api.delete(`/admin/regions/${id}`);
         fetchRegions();
       } catch (err) {
-        alert("Failed to delete region. It might be assigned to properties or users.");
+        showAlert("Error", "Failed to delete region. It might be assigned to properties or users.");
       }
-    }
+    });
   };
 
   const openModal = (region = null) => {
@@ -107,6 +126,11 @@ export default function RegionsTab() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

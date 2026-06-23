@@ -1,20 +1,35 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
-import { Edit, Trash2, Plus, UserX } from 'lucide-react';
+import { Edit, UserX, Plus } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
+import Pagination from '../../components/Pagination';
 
 export default function EmployeesTab() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  // Using raw password field, handled by backend BCrypt
   const [formData, setFormData] = useState({ name: '', email: '', role: 'AGENT', passwordHash: '', isActive: true, region: null });
   const [regions, setRegions] = useState([]);
 
+  // Pagination & Filters
+  const [currentPage, setCurrentPage] = useState(0);
+  const [totalPages, setTotalPages] = useState(0);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [roleFilter, setRoleFilter] = useState('');
+  const [regionFilter, setRegionFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+
   useEffect(() => {
-    fetchUsers();
     fetchRegions();
   }, []);
+
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(() => {
+      fetchUsers();
+    }, 300);
+    return () => clearTimeout(delayDebounceFn);
+  }, [currentPage, searchTerm, roleFilter, regionFilter, statusFilter]);
 
   const fetchRegions = async () => {
     try {
@@ -27,8 +42,16 @@ export default function EmployeesTab() {
 
   const fetchUsers = async () => {
     try {
-      const res = await api.get('/admin/users');
-      setUsers(res.data);
+      setLoading(true);
+      const params = new URLSearchParams({ page: currentPage, size: 10 });
+      if (roleFilter) params.append('role', roleFilter);
+      if (regionFilter) params.append('regionId', regionFilter);
+      if (statusFilter !== '') params.append('isActive', statusFilter);
+      if (searchTerm) params.append('search', searchTerm);
+
+      const res = await api.get(`/admin/users?${params.toString()}`);
+      setUsers(res.data.content || (Array.isArray(res.data) ? res.data : []));
+      setTotalPages(res.data.totalPages || 1);
     } catch (err) {
       console.error("Failed to fetch users", err);
     } finally {
@@ -36,41 +59,59 @@ export default function EmployeesTab() {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        await api.put(`/admin/users/${editingId}`, formData);
-      } else {
-        await api.post('/admin/users', formData);
-      }
-      setShowModal(false);
-      fetchUsers();
-    } catch (err) {
-      console.error("Save failed", err);
-    }
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'confirm', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
   };
 
-  const handleDeactivate = async (id) => {
-    if (window.confirm("Are you sure you want to deactivate this employee?")) {
+  const showConfirm = (title, message, onConfirmCallback) => {
+    setConfirmConfig({
+      isOpen: true, title, message, type: 'confirm',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirmCallback();
+      }
+    });
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    showConfirm("Confirm Save", "Are you sure you want to save this employee?", async () => {
+      try {
+        if (editingId) {
+          await api.put(`/admin/users/${editingId}`, formData);
+        } else {
+          await api.post('/admin/users', formData);
+        }
+        setShowModal(false);
+        fetchUsers();
+      } catch (err) {
+        showAlert("Error", "Save failed");
+      }
+    });
+  };
+
+  const handleDeactivate = (id) => {
+    showConfirm("Confirm Deactivate", "Are you sure you want to deactivate this employee?", async () => {
       try {
         await api.delete(`/admin/users/${id}`);
         fetchUsers();
       } catch (err) {
-        alert("Failed to deactivate. Employee might have active leads.");
+        showAlert("Error", "Failed to deactivate. Employee might have active leads.");
       }
-    }
+    });
   };
 
-  const handleGeneratePassword = async (id) => {
-    if (window.confirm("Generate a new password and email it to this employee?")) {
+  const handleGeneratePassword = (id) => {
+    showConfirm("Generate Password", "Generate a new password and email it to this employee?", async () => {
       try {
         await api.post(`/admin/users/${id}/reset-password`);
-        alert("New password generated and emailed successfully.");
+        showAlert("Success", "New password generated and emailed successfully.");
       } catch (err) {
-        alert("Failed to generate password.");
+        showAlert("Error", "Failed to generate password.");
       }
-    }
+    });
   };
 
   const openModal = (user = null) => {
@@ -86,11 +127,47 @@ export default function EmployeesTab() {
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+      <div className="p-6 border-b border-gray-100 flex flex-col md:flex-row justify-between items-start md:items-center bg-gray-50 space-y-4 md:space-y-0">
         <h2 className="text-xl font-bold text-gray-900">Manage Employees</h2>
-        <button onClick={() => openModal()} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition">
-          <Plus size={16} className="mr-2" /> Add Employee
-        </button>
+        <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+          <input 
+            type="text" 
+            placeholder="Search name/email..." 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500 w-full sm:w-48"
+            value={searchTerm}
+            onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(0); }}
+          />
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={roleFilter}
+            onChange={(e) => { setRoleFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Roles</option>
+            <option value="AGENT">Agent</option>
+            <option value="MANAGER">Manager</option>
+            <option value="ADMIN">Admin</option>
+          </select>
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={regionFilter}
+            onChange={(e) => { setRegionFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Regions</option>
+            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+          <select 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+            value={statusFilter}
+            onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(0); }}
+          >
+            <option value="">All Statuses</option>
+            <option value="true">Active</option>
+            <option value="false">Inactive</option>
+          </select>
+          <button onClick={() => openModal()} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition whitespace-nowrap">
+            <Plus size={16} className="mr-2" /> Add Employee
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -106,6 +183,7 @@ export default function EmployeesTab() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? <tr><td colSpan="5" className="text-center py-4">Loading...</td></tr> : 
+             users.length === 0 ? <tr><td colSpan="5" className="text-center py-4">No employees found.</td></tr> :
              users.map(u => (
               <tr key={u.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
@@ -132,6 +210,10 @@ export default function EmployeesTab() {
             ))}
           </tbody>
         </table>
+      </div>
+      
+      <div className="p-4 border-t border-gray-100">
+        <Pagination currentPage={currentPage} totalPages={totalPages} onPageChange={setCurrentPage} />
       </div>
 
       {showModal && (
@@ -175,6 +257,11 @@ export default function EmployeesTab() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

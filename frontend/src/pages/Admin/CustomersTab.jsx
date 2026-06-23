@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../../services/api';
 import { Edit, Trash2, Plus } from 'lucide-react';
+import ConfirmModal from '../../components/ConfirmModal';
 
 export default function CustomersTab() {
   const [customers, setCustomers] = useState([]);
@@ -8,6 +9,7 @@ export default function CustomersTab() {
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formData, setFormData] = useState({ name: '', email: '', phone: '', preferredLocation: '', propertyType: '', password: '' });
+  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     fetchCustomers();
@@ -24,41 +26,59 @@ export default function CustomersTab() {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
-    try {
-      if (editingId) {
-        await api.put(`/admin/customers/${editingId}`, formData);
-      } else {
-        await api.post('/admin/customers', formData);
-      }
-      setShowModal(false);
-      fetchCustomers();
-    } catch (err) {
-      console.error("Save failed", err);
-    }
+  const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'confirm', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm("Are you sure you want to delete this customer?")) {
+  const showConfirm = (title, message, onConfirmCallback) => {
+    setConfirmConfig({
+      isOpen: true, title, message, type: 'confirm',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        onConfirmCallback();
+      }
+    });
+  };
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    showConfirm("Confirm Save", "Are you sure you want to save this customer?", async () => {
+      try {
+        if (editingId) {
+          await api.put(`/admin/customers/${editingId}`, formData);
+        } else {
+          await api.post('/admin/customers', formData);
+        }
+        setShowModal(false);
+        fetchCustomers();
+      } catch (err) {
+        showAlert("Error", "Save failed");
+      }
+    });
+  };
+
+  const handleDelete = (id) => {
+    showConfirm("Confirm Delete", "Are you sure you want to delete this customer?", async () => {
       try {
         await api.delete(`/admin/customers/${id}`);
         fetchCustomers();
       } catch (err) {
-        alert("Failed to delete customer. They might have active leads.");
+        showAlert("Error", "Failed to delete customer. They might have active leads.");
       }
-    }
+    });
   };
 
-  const handleGeneratePassword = async (id) => {
-    if (window.confirm("Generate a new password and email it to this customer?")) {
+  const handleGeneratePassword = (id) => {
+    showConfirm("Generate Password", "Generate a new password and email it to this customer?", async () => {
       try {
         await api.post(`/admin/customers/${id}/reset-password`);
-        alert("New password generated and emailed successfully.");
+        showAlert("Success", "New password generated and emailed successfully.");
       } catch (err) {
-        alert("Failed to generate password.");
+        showAlert("Error", "Failed to generate password.");
       }
-    }
+    });
   };
 
   const openModal = (customer = null) => {
@@ -72,13 +92,24 @@ export default function CustomersTab() {
     setShowModal(true);
   };
 
+  const filteredCustomers = customers.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()) || c.email.toLowerCase().includes(searchTerm.toLowerCase()) || (c.phone && c.phone.includes(searchTerm)));
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-      <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-gray-50">
+      <div className="p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-center bg-gray-50 space-y-4 sm:space-y-0">
         <h2 className="text-xl font-bold text-gray-900">Manage Customers</h2>
-        <button onClick={() => openModal()} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition">
-          <Plus size={16} className="mr-2" /> Add Customer
-        </button>
+        <div className="flex items-center space-x-4 w-full sm:w-auto">
+          <input 
+            type="text" 
+            placeholder="Search customers..." 
+            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500 w-full sm:w-64"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+          <button onClick={() => openModal()} className="bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg flex items-center text-sm font-medium transition whitespace-nowrap">
+            <Plus size={16} className="mr-2" /> Add Customer
+          </button>
+        </div>
       </div>
 
       <div className="overflow-x-auto">
@@ -94,7 +125,7 @@ export default function CustomersTab() {
           </thead>
           <tbody className="bg-white divide-y divide-gray-200">
             {loading ? <tr><td colSpan="5" className="text-center py-4">Loading...</td></tr> : 
-             customers.map(c => (
+             filteredCustomers.map(c => (
               <tr key={c.id}>
                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{c.name}</td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
@@ -147,6 +178,11 @@ export default function CustomersTab() {
           </div>
         </div>
       )}
+
+      <ConfirmModal 
+        {...confirmConfig} 
+        onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
+      />
     </div>
   );
 }

@@ -33,8 +33,15 @@ public class PublicController {
     }
 
     @GetMapping("/properties")
-    public ResponseEntity<List<Property>> getProperties() {
-        return ResponseEntity.ok(propertyRepository.findAll());
+    public ResponseEntity<org.springframework.data.domain.Page<Property>> getProperties(
+            @RequestParam(required = false) String type,
+            @RequestParam(required = false) Long regionId,
+            @RequestParam(required = false) Double minPrice,
+            @RequestParam(required = false) Double maxPrice,
+            @RequestParam(required = false) String search,
+            org.springframework.data.domain.Pageable pageable) {
+        // Force status to be AVAILABLE for public queries
+        return ResponseEntity.ok(propertyService.getFilteredProperties("AVAILABLE", type, regionId, minPrice, maxPrice, search, pageable));
     }
 
     @PostMapping("/send-otp")

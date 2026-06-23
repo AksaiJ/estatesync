@@ -40,4 +40,15 @@ public class AuthController {
             return ResponseEntity.badRequest().body(e.getMessage());
         }
     }
+
+    @PutMapping("/reset-password")
+    public ResponseEntity<?> resetPassword(@RequestBody java.util.Map<String, String> payload, java.security.Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).body("Unauthorized");
+        try {
+            authService.resetPassword(principal.getName(), payload.get("currentPassword"), payload.get("newPassword"));
+            return ResponseEntity.ok().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(e.getMessage());
+        }
+    }
 }
