@@ -26,7 +26,7 @@ export default function AgentAuthorizations() {
         api.get('/manager/properties')
       ]);
       setAgents(agentsRes.data);
-      setRegionalProperties(propsRes.data);
+      setRegionalProperties(propsRes.data.content || propsRes.data);
     } catch (err) {
       console.error("Failed to fetch data", err);
     } finally {

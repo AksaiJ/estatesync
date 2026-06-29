@@ -160,6 +160,7 @@ export default function OpportunityWorkspaceModal({ opportunity, role = 'AGENT',
           setContent('');
         }
         fetchLogs();
+        if (onActivityLogged) onActivityLogged();
       } catch (err) {
         showAlert("Error", "Failed to log activity");
       } finally {
@@ -187,6 +188,7 @@ export default function OpportunityWorkspaceModal({ opportunity, role = 'AGENT',
         setVisitDate('');
         setActiveTab('NOTE');
         fetchLogs();
+        if (onActivityLogged) onActivityLogged();
       } catch (err) {
         console.error(err);
         showAlert("Error", "Failed to cancel visit");
@@ -650,7 +652,7 @@ export default function OpportunityWorkspaceModal({ opportunity, role = 'AGENT',
                       <div className={`w-[calc(100%-4rem)] md:w-[calc(50%-2.5rem)] ${theme.bg} p-3 rounded-xl border ${theme.border} shadow-sm transition-colors`}>
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-xs font-bold ${theme.text} uppercase tracking-wider`}>{log.type}</span>
-                          <time className={`text-xs ${theme.text} opacity-75 font-medium`}>{new Date(log.createdAt).toLocaleString()}</time>
+                          <time className={`text-xs ${theme.text} opacity-75 font-medium`}>{new Date(log.createdAt.replace('T', ' ')).toLocaleString()}</time>
                         </div>
                         <p className={`text-sm ${theme.text} whitespace-pre-wrap font-medium`}>{log.content}</p>
                         {log.user && (

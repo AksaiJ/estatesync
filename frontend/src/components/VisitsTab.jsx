@@ -7,7 +7,7 @@ export default function VisitsTab({ role = 'ADMIN' }) {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('ALL');
   
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);

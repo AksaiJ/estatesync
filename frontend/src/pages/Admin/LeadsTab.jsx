@@ -4,6 +4,7 @@ import api from '../../services/api';
 import ConfirmModal from '../../components/ConfirmModal';
 import OpportunityWorkspaceModal from '../Agent/OpportunityWorkspaceModal';
 import Pagination from '../../components/Pagination';
+import SearchableSelect from '../../components/SearchableSelect';
 
 export default function LeadsTab() {
   const [leads, setLeads] = useState([]);
@@ -204,8 +205,8 @@ export default function LeadsTab() {
     setShowModal(true);
   };
 
-  const addProperty = (e) => {
-    const propId = parseInt(e.target.value);
+  const addProperty = (val) => {
+    const propId = parseInt(val);
     if (!propId) return;
     const propObj = allSystemProperties.find(p => p.id === propId);
     if (propObj && !formData.properties.find(p => p.id === propId)) {
@@ -214,7 +215,6 @@ export default function LeadsTab() {
         properties: [...formData.properties, { ...propObj, sourceLeadId: null, dateOfInterest: new Date().toISOString() }]
       });
     }
-    e.target.value = "";
   };
 
   const removeProperty = (propId) => {
@@ -258,30 +258,53 @@ export default function LeadsTab() {
             <option value="NEGOTIATION">NEGOTIATION</option>
             <option value="CLOSED">CLOSED</option>
           </select>
-          <select 
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+          <SearchableSelect 
+            className="w-48"
             value={regionFilter}
-            onChange={(e) => { setRegionFilter(e.target.value); setCurrentPage(0); }}
-          >
-            <option value="">All Regions</option>
-            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          <select 
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
-            value={managerFilter}
-            onChange={(e) => { setManagerFilter(e.target.value); setCurrentPage(0); }}
-          >
-            <option value="">All Managers</option>
-            {managers.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-          </select>
-          <select 
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
-            value={agentFilter}
-            onChange={(e) => { setAgentFilter(e.target.value); setCurrentPage(0); }}
-          >
-            <option value="">All Agents</option>
-            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-          </select>
+            onChange={(val) => { setRegionFilter(val); setCurrentPage(0); }}
+            options={[{ value: '', label: 'All Regions' }, ...regions.map(r => ({ value: r.id, label: r.name }))]}
+            placeholder="All Regions"
+          />
+            <SearchableSelect 
+              className="w-48"
+              value={managerFilter}
+              onChange={(val) => { setManagerFilter(val); setCurrentPage(0); }}
+              options={[
+                { value: '', label: 'All Managers' }, 
+                ...managers.map(m => ({ 
+                  value: m.id, 
+                  label: m.name,
+                  display: (
+                    <div className="flex items-center w-full">
+                      <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{m.id}</span>
+                      <span className="flex-1 font-medium text-gray-900 truncate px-2">{m.name}</span>
+                      <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{m.region?.name || 'No Region'}</span>
+                    </div>
+                  )
+                }))
+              ]}
+              placeholder="All Managers"
+            />
+            <SearchableSelect 
+              className="w-48"
+              value={agentFilter}
+              onChange={(val) => { setAgentFilter(val); setCurrentPage(0); }}
+              options={[
+                { value: '', label: 'All Agents' }, 
+                ...agents.map(a => ({ 
+                  value: a.id, 
+                  label: a.name,
+                  display: (
+                    <div className="flex items-center w-full">
+                      <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{a.id}</span>
+                      <span className="flex-1 font-medium text-gray-900 truncate px-2">{a.name}</span>
+                      <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{a.region?.name || 'No Region'}</span>
+                    </div>
+                  )
+                }))
+              ]}
+              placeholder="All Agents"
+            />
           <button onClick={() => openModal()} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition flex items-center whitespace-nowrap">
             <Plus size={16} className="mr-2" /> Add Lead
           </button>
@@ -315,7 +338,8 @@ export default function LeadsTab() {
                   {l.createdAt ? new Date(l.createdAt).toLocaleDateString() : 'N/A'}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 font-medium">
-                  {l.customer?.name}
+                  <div>{l.customer?.name}</div>
+                  {l.referredFrom && <div className="text-[10px] text-gray-400 font-normal">from {l.referredFrom}</div>}
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-500">
                   {l.interestedPropertiesWithDates && l.interestedPropertiesWithDates.length > 0 ? (
@@ -408,29 +432,64 @@ export default function LeadsTab() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 pt-2 border-t">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Region *</label>
-                  <select className="w-full border rounded p-2" required value={formData.regionId} onChange={e => setFormData({...formData, regionId: e.target.value})}>
-                    <option value="" disabled>-- Select Region --</option>
-                    {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Agent</label>
-                  <select className="w-full border rounded p-2" value={formData.agentId} onChange={e => setFormData({...formData, agentId: e.target.value})}>
-                    <option value="">-- Unassigned --</option>
-                    {agents.map(a => <option key={a.id} value={a.id}>{a.name} {a.region ? `(${a.region.name})` : ''}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Manager</label>
-                  <select className="w-full border rounded p-2" value={formData.managerId} onChange={e => setFormData({...formData, managerId: e.target.value})}>
-                    <option value="">-- Unassigned --</option>
-                    {managers.map(m => <option key={m.id} value={m.id}>{m.name} {m.region ? `(${m.region.name})` : ''}</option>)}
-                  </select>
-                </div>
-                <div className="col-span-2 mt-4">
+                <div className="grid grid-cols-2 gap-4 pt-2 border-t">
+                  <div className="relative z-30">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Region *</label>
+                    <SearchableSelect 
+                      className="w-full"
+                      value={formData.regionId}
+                      onChange={(val) => setFormData({...formData, regionId: val})}
+                      options={regions.map(r => ({ value: r.id, label: r.name }))}
+                      placeholder="-- Select Region --"
+                    />
+                  </div>
+                  <div className="relative z-30">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Manager</label>
+                    <SearchableSelect 
+                      className="w-full"
+                      value={formData.managerId}
+                      onChange={(val) => setFormData({...formData, managerId: val})}
+                      options={[
+                        { value: '', label: '-- Unassigned --' }, 
+                        ...managers.map(m => ({ 
+                          value: m.id, 
+                          label: `${m.name} ${m.region ? `(${m.region.name})` : ''}`,
+                          display: (
+                            <div className="flex items-center w-full">
+                              <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{m.id}</span>
+                              <span className="flex-1 font-medium text-gray-900 truncate px-2">{m.name}</span>
+                              <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{m.region?.name || 'No Region'}</span>
+                            </div>
+                          )
+                        }))
+                      ]}
+                      placeholder="-- Unassigned --"
+                    />
+                  </div>
+                  <div className="relative z-20">
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Assigned Agent</label>
+                    <SearchableSelect 
+                      className="w-full"
+                      value={formData.agentId}
+                      onChange={(val) => setFormData({...formData, agentId: val})}
+                      options={[
+                        { value: '', label: '-- Unassigned --' }, 
+                        ...agents.map(a => ({ 
+                          value: a.id, 
+                          label: `${a.name} ${a.region ? `(${a.region.name})` : ''}`,
+                          display: (
+                            <div className="flex items-center w-full">
+                              <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{a.id}</span>
+                              <span className="flex-1 font-medium text-gray-900 truncate px-2">{a.name}</span>
+                              <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{a.region?.name || 'No Region'}</span>
+                            </div>
+                          )
+                        }))
+                      ]}
+                      placeholder="-- Unassigned --"
+                    />
+                  </div>
+                  <div className="col-span-2 mt-4">
                   <label className="block text-sm font-medium text-gray-700 mb-1">Lead Status *</label>
                   <select className="w-full border rounded p-2 bg-gray-50 font-semibold" required value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})}>
                     <option value="NEW">NEW</option>
@@ -454,14 +513,17 @@ export default function LeadsTab() {
                   ))}
                   {formData.properties.length === 0 && <span className="text-gray-400 text-sm">No properties selected.</span>}
                 </div>
-                <select className="w-full border rounded p-2" onChange={addProperty} defaultValue="">
-                  <option value="" disabled>+ Add Property...</option>
-                  {allSystemProperties
-                    .filter(p => !formData.properties.find(existing => existing.id === p.id))
-                    .filter(p => !formData.regionId || p.region?.id == formData.regionId)
-                    .map(p => <option key={p.id} value={p.id}>{p.title}</option>)}
-                </select>
-              </div>
+                  <SearchableSelect 
+                    className="w-full relative z-0"
+                    value=""
+                    onChange={(val) => addProperty(val)}
+                    options={allSystemProperties
+                      .filter(p => !formData.properties.find(existing => existing.id === p.id))
+                      .filter(p => !formData.regionId || p.region?.id == formData.regionId)
+                      .map(p => ({ value: p.id, label: p.title }))}
+                    placeholder="+ Add Property..."
+                  />
+                </div>
 
               <div className="flex justify-end space-x-3 mt-6">
                 <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800">Cancel</button>

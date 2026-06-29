@@ -3,6 +3,7 @@ import api from '../../services/api';
 import { Edit, UserX, Plus } from 'lucide-react';
 import ConfirmModal from '../../components/ConfirmModal';
 import Pagination from '../../components/Pagination';
+import SearchableSelect from '../../components/SearchableSelect';
 
 export default function EmployeesTab() {
   const [users, setUsers] = useState([]);
@@ -147,14 +148,13 @@ export default function EmployeesTab() {
             <option value="MANAGER">Manager</option>
             <option value="ADMIN">Admin</option>
           </select>
-          <select 
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+          <SearchableSelect 
+            className="w-48"
             value={regionFilter}
-            onChange={(e) => { setRegionFilter(e.target.value); setCurrentPage(0); }}
-          >
-            <option value="">All Regions</option>
-            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+            onChange={(val) => { setRegionFilter(val); setCurrentPage(0); }}
+            options={[{ value: '', label: 'All Regions' }, ...regions.map(r => ({ value: r.id, label: r.name }))]}
+            placeholder="All Regions"
+          />
           <select 
             className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
             value={statusFilter}
@@ -230,10 +230,13 @@ export default function EmployeesTab() {
                   <option value="ADMIN">Admin</option>
                 </select>
                 {formData.role !== 'ADMIN' && (
-                  <select className="w-full border rounded p-2" value={formData.region?.id || ''} onChange={e => setFormData({...formData, region: { id: e.target.value }})}>
-                    <option value="">Select Region</option>
-                    {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
+                  <SearchableSelect 
+                    className="w-full flex-1"
+                    value={formData.region?.id || ''}
+                    onChange={(val) => setFormData({...formData, region: { id: val }})}
+                    options={regions.map(r => ({ value: r.id, label: r.name }))}
+                    placeholder="Select Region"
+                  />
                 )}
               </div>
 

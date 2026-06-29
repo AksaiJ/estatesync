@@ -1,0 +1,1 @@
+ALTER TABLE leads ADD COLUMN referred_from VARCHAR(255);

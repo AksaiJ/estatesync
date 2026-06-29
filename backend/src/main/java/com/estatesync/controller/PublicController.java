@@ -173,6 +173,8 @@ public class PublicController {
             }
         }
         
+        request.setReferredFrom("Official Website Catalogue Enquiry");
+        
         try {
             boolean nameIgnored = leadService.processInterest(request);
             if (nameIgnored) {

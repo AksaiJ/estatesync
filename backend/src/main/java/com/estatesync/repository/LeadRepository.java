@@ -13,4 +13,7 @@ public interface LeadRepository extends JpaRepository<Lead, Long>, JpaSpecificat
     List<Lead> findByRegionId(Long regionId);
     @org.springframework.data.jpa.repository.Query("SELECT r.name as region, COUNT(l) as count FROM Lead l JOIN l.region r GROUP BY r.name")
     List<Object[]> countLeadsByRegion();
+
+    @org.springframework.data.jpa.repository.Query("SELECT COALESCE(l.referredFrom, 'Unknown') as source, COUNT(l) as count FROM Lead l GROUP BY l.referredFrom")
+    List<Object[]> countLeadsBySource();
 }

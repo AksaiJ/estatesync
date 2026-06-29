@@ -18,6 +18,22 @@ public class LeadSpecification {
         return (root, query, cb) -> managerId == null ? null : cb.equal(root.get("manager").get("id"), managerId);
     }
 
+    public static Specification<Lead> isManagerAuthorized(Long regionId, Long managerId) {
+        return (root, query, cb) -> {
+            if (regionId == null && managerId == null) return null;
+            if (regionId != null && managerId != null) {
+                return cb.or(
+                    cb.equal(root.get("region").get("id"), regionId),
+                    cb.equal(root.get("manager").get("id"), managerId)
+                );
+            } else if (regionId != null) {
+                return cb.equal(root.get("region").get("id"), regionId);
+            } else {
+                return cb.equal(root.get("manager").get("id"), managerId);
+            }
+        };
+    }
+
     public static Specification<Lead> searchByCustomerNameOrPhone(String search) {
         return (root, query, cb) -> {
             if (search == null || search.trim().isEmpty()) {

@@ -41,4 +41,7 @@ public class Lead {
     @com.fasterxml.jackson.annotation.JsonIgnoreProperties("lead")
     @OneToMany(mappedBy = "lead", cascade = CascadeType.ALL, orphanRemoval = true)
     private java.util.List<Opportunity> opportunities;
+
+    @Column(name = "referred_from")
+    private String referredFrom;
 }

@@ -5,8 +5,10 @@ import { Users, CheckCircle, Search, Filter, Activity, TrendingUp, History, Plus
 import VisitsTab from '../../components/VisitsTab';
 import OpportunityWorkspaceModal from '../Agent/OpportunityWorkspaceModal';
 import AgentAuthorizations from './AgentAuthorizations';
+import ManagerPropertiesTab from './ManagerPropertiesTab';
 import ConfirmModal from '../../components/ConfirmModal';
 import Pagination from '../../components/Pagination';
+import SearchableSelect from '../../components/SearchableSelect';
 
 export default function ManagerDashboard() {
   const [leads, setLeads] = useState([]);
@@ -22,7 +24,8 @@ export default function ManagerDashboard() {
 
   const location = useLocation();
   const activeTab = location.pathname.includes('/manager/visits') ? 'visits' : 
-                    location.pathname.includes('/manager/authorizations') ? 'authorizations' : 'leads';
+                    location.pathname.includes('/manager/authorizations') ? 'authorizations' :
+                    location.pathname.includes('/manager/properties') ? 'properties' : 'leads';
 
   // Filters & Search
   const [searchQuery, setSearchQuery] = useState('');
@@ -39,6 +42,19 @@ export default function ManagerDashboard() {
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedOppForHistory, setSelectedOppForHistory] = useState(null);
 
+  // Create Lead Modal
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [regions, setRegions] = useState([]);
+  const [allSystemProperties, setAllSystemProperties] = useState([]);
+  const [createFormData, setCreateFormData] = useState({
+    customerName: '', customerPhone: '', customerEmail: '',
+    regionId: '', properties: []
+  });
+
+  // Add Opportunity Modal
+  const [showAddOppModal, setShowAddOppModal] = useState(false);
+  const [addOppData, setAddOppData] = useState({ leadId: '', propertyId: '', agentId: '' });
+
   useEffect(() => {
     fetchConstants();
   }, []);
@@ -52,15 +68,49 @@ export default function ManagerDashboard() {
 
   const fetchConstants = async () => {
     try {
-      const [agentsRes, kpisRes] = await Promise.all([
+      const [agentsRes, kpisRes, regionsRes, propsRes] = await Promise.all([
         api.get('/manager/agents'),
-        api.get('/manager/kpis')
+        api.get('/manager/kpis'),
+        api.get('/public/regions'),
+        api.get('/public/properties?size=1000')
       ]);
       setAgents(agentsRes.data);
       setKpis(kpisRes.data);
+      setRegions(regionsRes.data);
+      setAllSystemProperties(propsRes.data.content || propsRes.data);
     } catch (err) {
       console.error("Failed to fetch constants", err);
     }
+  };
+
+  const handleCreateSave = async (e) => {
+    e.preventDefault();
+    try {
+      const payload = {
+        customer: { name: createFormData.customerName, phone: createFormData.customerPhone, email: createFormData.customerEmail },
+        region: createFormData.regionId ? { id: createFormData.regionId } : null,
+        interestedProperties: createFormData.properties.map(p => ({ id: p.id }))
+      };
+      await api.post('/manager/leads', payload);
+      setShowCreateModal(false);
+      setCreateFormData({ customerName: '', customerPhone: '', customerEmail: '', regionId: '', properties: [] });
+      fetchLeads();
+      showAlert("Success", "Lead created successfully!");
+    } catch (err) {
+      showAlert("Error", "Failed to create lead: " + (err.response?.data || err.message));
+    }
+  };
+
+  const addProperty = (val) => {
+    const propId = Number(val);
+    const prop = allSystemProperties.find(p => p.id === propId);
+    if (prop && !createFormData.properties.find(p => p.id === propId)) {
+      setCreateFormData({ ...createFormData, properties: [...createFormData.properties, prop] });
+    }
+  };
+
+  const removeProperty = (id) => {
+    setCreateFormData({ ...createFormData, properties: createFormData.properties.filter(p => p.id !== id) });
   };
 
   const fetchLeads = async () => {
@@ -84,6 +134,23 @@ export default function ManagerDashboard() {
 
   const showAlert = (title, message) => {
     setConfirmConfig({ isOpen: true, title, message, type: 'alert', onConfirm: () => setConfirmConfig(prev => ({ ...prev, isOpen: false })) });
+  };
+
+  const confirmAssignment = (opportunityId, agentId) => {
+    if (!agentId) return;
+    const agent = agents.find(a => a.id === Number(agentId));
+    const agentName = agent ? agent.name : 'this agent';
+    
+    setConfirmConfig({
+      isOpen: true,
+      title: 'Confirm Assignment',
+      message: `Are you sure you want to assign ${agentName} to this opportunity?`,
+      type: 'confirm',
+      onConfirm: () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        assignAgent(opportunityId, agentId);
+      }
+    });
   };
 
   const assignAgent = async (opportunityId, agentId) => {
@@ -147,14 +214,22 @@ export default function ManagerDashboard() {
           </div>
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-        {/* Main Leads Table (100% width now) */}
-        <div className="xl:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6 overflow-hidden flex flex-col h-full">
-          <div className="flex justify-between items-center mb-6">
-            <h2 className="text-xl font-bold text-gray-900 flex items-center"><Users className="mr-2 text-primary-600"/> Parent Leads</h2>
-            <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-md font-medium">
-              Click any row to expand and assign Opportunities
+          {/* Main Leads Table (100% width now) */}
+          <div className="xl:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 p-6 overflow-hidden flex flex-col h-full">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 flex items-center"><Users className="mr-2 text-primary-600"/> Parent Leads</h2>
+                <div className="text-sm bg-blue-50 text-blue-700 px-3 py-1.5 rounded-md font-medium mt-1">
+                  Click any row to expand and assign Opportunities
+                </div>
+              </div>
+              <button onClick={() => setShowCreateModal(true)} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition flex items-center whitespace-nowrap">
+                <Plus size={16} className="mr-2" /> Add Lead
+              </button>
+              <button onClick={() => setShowAddOppModal(true)} className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition flex items-center whitespace-nowrap ml-3">
+                <Plus size={16} className="mr-2" /> Add Opportunity
+              </button>
             </div>
-          </div>
 
           <div className="flex flex-wrap gap-4 mb-6">
             <div className="relative flex-1 min-w-[200px]">
@@ -202,6 +277,7 @@ export default function ManagerDashboard() {
                           <td className="py-4 px-4">
                             <div className="font-bold text-gray-900">{lead.customer?.name}</div>
                             <div className="text-sm text-gray-500">{lead.customer?.phone} • {lead.customer?.email}</div>
+                            {lead.referredFrom && <div className="text-[10px] text-gray-400 mt-1 font-medium">from {lead.referredFrom}</div>}
                           </td>
                           <td className="py-4 px-4">
                             <span className={`px-2 py-1 text-xs font-semibold rounded-full ${lead.status === 'OPEN' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>
@@ -243,15 +319,23 @@ export default function ManagerDashboard() {
                                         </div>
 
                                         <div className="flex items-center space-x-3 w-64">
-                                          <select 
-                                            className={`flex-1 border rounded p-1.5 text-sm outline-none shadow-sm ${!opp.agent ? 'border-yellow-400 focus:border-yellow-500 focus:ring-1 focus:ring-yellow-500 bg-yellow-50' : 'border-gray-300 focus:border-primary-500 focus:ring-1 focus:ring-primary-500 bg-white'}`}
-                                            onChange={(e) => assignAgent(opp.id, e.target.value)}
+                                          <SearchableSelect 
+                                            className="flex-1 shadow-sm"
                                             value={opp.agent ? opp.agent.id : ""}
-                                            onClick={(e) => e.stopPropagation()}
-                                          >
-                                            <option value="" disabled>Assign Agent...</option>
-                                            {agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                                          </select>
+                                            onChange={(val) => confirmAssignment(opp.id, val)}
+                                            options={agents.map(a => ({ 
+                                                value: a.id, 
+                                                label: a.name,
+                                                display: (
+                                                  <div className="flex items-center w-full">
+                                                    <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{a.id}</span>
+                                                    <span className="flex-1 font-medium text-gray-900 truncate px-2">{a.name}</span>
+                                                    <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{a.region?.name || 'No Region'}</span>
+                                                  </div>
+                                                )
+                                              }))}
+                                            placeholder="Assign Agent..."
+                                          />
                                           
                                           <button 
                                             onClick={(e) => { e.stopPropagation(); openHistory(opp.id); }} 
@@ -295,7 +379,115 @@ export default function ManagerDashboard() {
           opportunity={selectedOppForHistory} 
           role="MANAGER" 
           onClose={() => { setShowHistoryModal(false); setSelectedOppForHistory(null); }} 
+          onActivityLogged={() => fetchLeads()}
         />
+      )}
+
+      {showAddOppModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-visible flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="text-lg font-bold text-gray-900">Add New Opportunity</h3>
+              <button onClick={() => setShowAddOppModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <span className="text-2xl leading-none">&times;</span>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-visible flex-1">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!addOppData.leadId || !addOppData.propertyId) {
+                  showAlert("Error", "Please select both a Lead and a Property.");
+                  return;
+                }
+                try {
+                  await api.post('/manager/opportunities', addOppData);
+                  setShowAddOppModal(false);
+                  setAddOppData({ leadId: '', propertyId: '', agentId: '' });
+                  fetchLeads();
+                } catch(err) {
+                  console.error(err);
+                  showAlert("Error", "Failed to create opportunity");
+                }
+              }}>
+                <div className="mb-4 relative z-50">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Select Lead *</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addOppData.leadId}
+                    onChange={(val) => setAddOppData({...addOppData, leadId: val})}
+                    placeholder="-- Select Lead --"
+                    options={leads.map(l => ({
+                      value: l.id,
+                      label: `${l.customer?.name} - ${l.customer?.phone} (ID: ${l.id})`,
+                      display: (
+                        <div className="flex flex-col w-full">
+                          <span className="font-medium text-gray-900">{l.customer?.name}</span>
+                          <span className="text-gray-500 text-xs">{l.customer?.phone} | {l.customer?.email}</span>
+                        </div>
+                      )
+                    }))}
+                  />
+                </div>
+
+                <div className="mb-4 relative z-40">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Select Property *</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addOppData.propertyId}
+                    onChange={(val) => setAddOppData({...addOppData, propertyId: val})}
+                    placeholder="-- Select Property --"
+                    options={allSystemProperties.map(p => ({
+                      value: p.id,
+                      label: `${p.title} (ID: ${p.id})`,
+                      display: (
+                        <div className="flex flex-col w-full">
+                          <span className="font-medium text-gray-900">{p.title}</span>
+                          <span className="text-gray-500 text-xs">{p.region?.name} | {p.type} | ₹{p.price?.toLocaleString()}</span>
+                        </div>
+                      )
+                    }))}
+                  />
+                </div>
+
+                <div className="mb-6 relative z-30">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Assign Agent (Optional)</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addOppData.agentId}
+                    onChange={(val) => setAddOppData({...addOppData, agentId: val})}
+                    placeholder="-- Select Agent --"
+                    options={agents.map(a => ({
+                      value: a.id,
+                      label: a.name,
+                      display: (
+                        <div className="flex flex-col w-full">
+                          <span className="font-medium text-gray-900">{a.name}</span>
+                          <span className="text-gray-500 text-xs">{a.email}</span>
+                        </div>
+                      )
+                    }))}
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddOppModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                  >
+                    Create Opportunity
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'visits' && (
@@ -304,11 +496,80 @@ export default function ManagerDashboard() {
       {activeTab === 'authorizations' && (
         <AgentAuthorizations />
       )}
+      {activeTab === 'properties' && (
+        <ManagerPropertiesTab />
+      )}
 
       <ConfirmModal 
         {...confirmConfig} 
         onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
       />
+
+      {showCreateModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-2xl w-full p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-bold">Add New Lead</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+            </div>
+            <form onSubmit={handleCreateSave} className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Name *</label>
+                  <input type="text" className="w-full border rounded p-2" value={createFormData.customerName} onChange={e => setCreateFormData({...createFormData, customerName: e.target.value})} required />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Phone *</label>
+                  <input type="tel" className="w-full border rounded p-2" value={createFormData.customerPhone} onChange={e => setCreateFormData({...createFormData, customerPhone: e.target.value})} required />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Customer Email *</label>
+                  <input type="email" className="w-full border rounded p-2" value={createFormData.customerEmail} onChange={e => setCreateFormData({...createFormData, customerEmail: e.target.value})} required />
+                </div>
+              </div>
+
+              <div className="pt-2 border-t relative z-20">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Region</label>
+                <SearchableSelect 
+                  className="w-full"
+                  value={createFormData.regionId}
+                  onChange={(val) => setCreateFormData({...createFormData, regionId: val})}
+                  options={regions.map(r => ({ value: r.id, label: r.name }))}
+                  placeholder="-- Optional: Select Region --"
+                />
+              </div>
+
+              <div className="pt-2 border-t">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Interested Properties</label>
+                <div className="space-y-2 mb-3 max-h-40 overflow-y-auto bg-gray-50 p-2 rounded border">
+                  {createFormData.properties.map(p => (
+                    <div key={p.id} className="flex justify-between items-center bg-white p-2 border rounded text-sm shadow-sm">
+                      <span className="truncate pr-2">{p.title}</span>
+                      <button type="button" onClick={() => removeProperty(p.id)} className="text-red-500 hover:text-red-700 font-bold px-2"><X size={16} /></button>
+                    </div>
+                  ))}
+                  {createFormData.properties.length === 0 && <span className="text-gray-400 text-sm">No properties selected.</span>}
+                </div>
+                <SearchableSelect 
+                  className="w-full relative z-10"
+                  value=""
+                  onChange={(val) => addProperty(val)}
+                  options={allSystemProperties
+                    .filter(p => !createFormData.properties.find(existing => existing.id === p.id))
+                    .filter(p => !createFormData.regionId || p.region?.id == createFormData.regionId)
+                    .map(p => ({ value: p.id, label: p.title }))}
+                  placeholder="+ Add Property..."
+                />
+              </div>
+
+              <div className="flex justify-end space-x-3 mt-6">
+                <button type="button" onClick={() => setShowCreateModal(false)} className="px-4 py-2 text-gray-600 hover:text-gray-800 font-medium">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 font-medium">Create Lead</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

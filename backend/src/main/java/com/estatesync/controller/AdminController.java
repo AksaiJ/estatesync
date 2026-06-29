@@ -162,6 +162,38 @@ public class AdminController {
     }
 
     // --- Opportunities ---
+    @PostMapping("/opportunities")
+    public ResponseEntity<?> createOpportunity(@RequestBody java.util.Map<String, String> payload, org.springframework.security.core.Authentication authentication) {
+        Long leadId = Long.parseLong(payload.get("leadId"));
+        Long propertyId = Long.parseLong(payload.get("propertyId"));
+        String agentIdStr = payload.get("agentId");
+        
+        com.estatesync.model.Lead lead = leadRepository.findById(leadId).orElse(null);
+        com.estatesync.model.Property property = propertyRepository.findById(propertyId).orElse(null);
+        
+        if (lead == null || property == null) {
+            return ResponseEntity.badRequest().body("Lead or Property not found");
+        }
+
+        com.estatesync.model.Opportunity opp = new com.estatesync.model.Opportunity();
+        opp.setLead(lead);
+        opp.setProperty(property);
+        opp.setStatus(com.estatesync.model.OpportunityStatus.NEW);
+        
+        if (agentIdStr != null && !agentIdStr.isEmpty()) {
+            Long agentId = Long.parseLong(agentIdStr);
+            User agent = userRepository.findById(agentId).orElse(null);
+            opp.setAgent(agent);
+        }
+
+        opp = opportunityRepository.save(opp);
+        
+        com.estatesync.security.CustomUserDetails userDetails = (com.estatesync.security.CustomUserDetails) authentication.getPrincipal();
+        activityService.logSystemEvent(opp, "Opportunity manually created by " + userDetails.getUser().getName());
+        
+        return ResponseEntity.ok(opp);
+    }
+
     @GetMapping("/opportunities")
     public org.springframework.data.domain.Page<com.estatesync.model.Opportunity> getAllOpportunities(
             @RequestParam(required = false) com.estatesync.model.OpportunityStatus status,
@@ -286,9 +318,50 @@ public class AdminController {
             leadsByRegion.add(java.util.Map.of("name", row[0].toString(), "value", row[1]));
         }
 
+        List<Object[]> leadsBySourceRaw = leadRepository.countLeadsBySource();
+        List<java.util.Map<String, Object>> leadsBySource = new java.util.ArrayList<>();
+        for (Object[] row : leadsBySourceRaw) {
+            leadsBySource.add(java.util.Map.of("name", row[0].toString(), "value", row[1]));
+        }
+
+        java.time.format.DateTimeFormatter ymFormatter = java.time.format.DateTimeFormatter.ofPattern("yyyy-MM");
+
+        java.util.Map<String, Long> custMap = leadRepository.findAll().stream()
+            .filter(l -> l.getCreatedAt() != null)
+            .collect(java.util.stream.Collectors.groupingBy(
+                l -> l.getCreatedAt().format(ymFormatter),
+                java.util.stream.Collectors.counting()
+            ));
+        List<java.util.Map<String, Object>> customersOverTime = custMap.entrySet().stream()
+            .sorted(java.util.Map.Entry.comparingByKey())
+            .map(e -> java.util.Map.of("name", (Object) e.getKey(), "value", e.getValue()))
+            .collect(java.util.stream.Collectors.toList());
+
+        java.util.Map<String, Double> revMap = opportunityRepository.findAll().stream()
+            .filter(o -> o.getStatus() == com.estatesync.model.OpportunityStatus.CLOSED_WON && o.getUpdatedAt() != null && o.getProperty() != null && o.getProperty().getPrice() != null)
+            .collect(java.util.stream.Collectors.groupingBy(
+                o -> o.getUpdatedAt().format(ymFormatter),
+                java.util.stream.Collectors.summingDouble(o -> o.getProperty().getPrice().doubleValue())
+            ));
+        List<java.util.Map<String, Object>> revenueOverTime = revMap.entrySet().stream()
+            .sorted(java.util.Map.Entry.comparingByKey())
+            .map(e -> java.util.Map.of("name", (Object) e.getKey(), "value", e.getValue()))
+            .collect(java.util.stream.Collectors.toList());
+
+        java.util.Map<String, Long> visitMap = visitRepository.findAll().stream()
+            .filter(v -> v.getVisitDate() != null)
+            .collect(java.util.stream.Collectors.groupingBy(
+                v -> v.getVisitDate().format(ymFormatter),
+                java.util.stream.Collectors.counting()
+            ));
+        List<java.util.Map<String, Object>> visitsOverTime = visitMap.entrySet().stream()
+            .sorted(java.util.Map.Entry.comparingByKey())
+            .map(e -> java.util.Map.of("name", (Object) e.getKey(), "value", e.getValue()))
+            .collect(java.util.stream.Collectors.toList());
+
         com.estatesync.dto.AnalyticsResponse response = new com.estatesync.dto.AnalyticsResponse(
             totalProperties, totalLeads, totalCustomers, totalEmployees,
-            leadsByStatus, leadsByRegion
+            leadsByStatus, leadsByRegion, leadsBySource, customersOverTime, revenueOverTime, visitsOverTime
         );
         return ResponseEntity.ok(response);
     }
@@ -407,15 +480,11 @@ public class AdminController {
         com.estatesync.model.Opportunity opp = opportunityRepository.findById(id).orElse(null);
         if (opp == null) return ResponseEntity.badRequest().body("Not found");
 
-        com.estatesync.model.ActivityLog log = new com.estatesync.model.ActivityLog();
-        log.setOpportunity(opp);
-        log.setActor(admin);
-        log.setType(com.estatesync.model.ActivityType.valueOf(payload.get("type")));
-        log.setContent(payload.get("content"));
-        log.setCreatedAt(java.time.LocalDateTime.now());
-        activityService.save(log);
+        com.estatesync.model.ActivityType type = com.estatesync.model.ActivityType.valueOf(payload.get("type"));
+        String content = payload.get("content");
+        activityService.logActivity(opp, admin, type, content);
 
-        return ResponseEntity.ok(log);
+        return ResponseEntity.ok(java.util.Map.of("message", "Activity logged"));
     }
 
     @GetMapping("/reports/data")

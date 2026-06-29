@@ -6,6 +6,7 @@ import Pagination from '../../components/Pagination';
 import { Link } from 'react-router-dom';
 import LeafletMapPreview from '../../components/LeafletMapPreview';
 import { Image as ImageIcon, ChevronLeft, Navigation } from 'lucide-react';
+import SearchableSelect from '../../components/SearchableSelect';
 
 export default function PublicHome() {
   const [properties, setProperties] = useState([]);
@@ -715,8 +716,8 @@ export default function PublicHome() {
 
       {/* Beautified OTP Form Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fade-in">
-          <div className="bg-white/90 backdrop-blur-xl rounded-3xl max-w-md w-full p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-white/50 relative transform transition-all">
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-8 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.3)] border border-white/50 relative transform transition-all">
             
             <button onClick={() => setShowModal(false)} className="absolute top-6 right-6 text-gray-400 hover:text-gray-600 bg-white hover:bg-gray-100 p-2 rounded-full transition shadow-sm border border-gray-100">
               <X size={18} />
@@ -754,7 +755,7 @@ export default function PublicHome() {
                   className={`flex-1 py-2.5 text-sm font-bold rounded-lg transition-all duration-200 ${modalMode === 'signup' ? 'bg-white text-gray-900 shadow-sm border border-gray-200/60' : 'text-gray-500 hover:text-gray-700'}`}
                   onClick={() => { setModalMode('signup'); setMessage(''); setOtpSent(false); }}
                 >
-                  Sign Up
+                  Register
                 </button>
               </div>
             )}
@@ -874,15 +875,13 @@ export default function PublicHome() {
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Region</label>
-                <select 
-                  className="w-full p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 text-gray-700 font-medium"
-                  value={tempRegion} onChange={e => setTempRegion(e.target.value)}
-                >
-                  <option value="">Any Region</option>
-                  {regionsList.map(r => (
-                    <option key={r.id} value={r.id}>{r.name}</option>
-                  ))}
-                </select>
+                <SearchableSelect 
+                  className="w-full relative z-50"
+                  value={tempRegion}
+                  onChange={(val) => setTempRegion(val)}
+                  options={[{ value: '', label: 'Any Region' }, ...regionsList.map(r => ({ value: r.id, label: r.name }))]}
+                  placeholder="Any Region"
+                />
               </div>
 
               <div>

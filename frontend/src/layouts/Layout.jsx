@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, LayoutDashboard, Users, Calendar, Settings, Activity, FileText } from 'lucide-react';
+import { LogOut, LayoutDashboard, Users, Calendar, Settings, Activity, FileText, Building } from 'lucide-react';
 import SettingsModal from '../components/SettingsModal';
 
 export default function Layout() {
@@ -22,7 +22,8 @@ export default function Layout() {
         return [
           { label: 'Leads & Assignments', path: '/manager/leads', icon: <Users size={20} /> },
           { label: 'Visit Schedules', path: '/manager/visits', icon: <Calendar size={20} /> },
-          { label: 'Agent Authorizations', path: '/manager/authorizations', icon: <Users size={20} /> }
+          { label: 'Agent Authorizations', path: '/manager/authorizations', icon: <Users size={20} /> },
+          { label: 'Properties', path: '/manager/properties', icon: <Building size={20} /> }
         ];
       case 'AGENT':
         return [

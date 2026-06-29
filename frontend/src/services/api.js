@@ -23,8 +23,16 @@ api.interceptors.response.use(
     if (error.response && (error.response.status === 401 || error.response.status === 403)) {
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
-      toast.error('Session expired. Please log in again.');
+      localStorage.removeItem('role');
+      localStorage.removeItem('name');
+      localStorage.removeItem('sessionToken');
+      
+      if (window.location.pathname !== '/' && window.location.pathname !== '/login') {
+        window.location.href = '/login';
+        toast.error('Session expired. Please log in again.');
+      } else {
+        window.dispatchEvent(new Event('auth-error'));
+      }
       return Promise.reject(error);
     }
 

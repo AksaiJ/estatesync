@@ -73,11 +73,15 @@ public class LeadService {
             Lead targetLead;
             if (!existingLeads.isEmpty()) {
                 targetLead = existingLeads.get(0);
+                if (request.getReferredFrom() != null && targetLead.getReferredFrom() == null) {
+                    targetLead.setReferredFrom(request.getReferredFrom());
+                }
             } else {
                 targetLead = new Lead();
                 targetLead.setCustomer(customer);
                 targetLead.setStatus(LeadStatus.OPEN);
                 targetLead.setRegion(region);
+                targetLead.setReferredFrom(request.getReferredFrom());
                 userRepository.findFirstByRoleAndRegionIdAndIsActiveTrueOrderByIdAsc(Role.MANAGER, region.getId())
                     .ifPresent(targetLead::setManager);
                 targetLead = leadRepository.save(targetLead);
@@ -153,6 +157,14 @@ public class LeadService {
         return leadRepository.findAll(spec, pageable);
     }
 
+    public org.springframework.data.domain.Page<Lead> getManagerLeads(
+            com.estatesync.model.LeadStatus status, Long regionId, Long managerId, String search, org.springframework.data.domain.Pageable pageable) {
+        org.springframework.data.jpa.domain.Specification<Lead> spec = org.springframework.data.jpa.domain.Specification.where(com.estatesync.specification.LeadSpecification.hasStatus(status))
+                .and(com.estatesync.specification.LeadSpecification.isManagerAuthorized(regionId, managerId))
+                .and(com.estatesync.specification.LeadSpecification.searchByCustomerNameOrPhone(search));
+        return leadRepository.findAll(spec, pageable);
+    }
+
     @Transactional
     public Lead createAdminLead(com.estatesync.dto.AdminLeadDTO dto) {
         Customer customer = customerRepository.findByPhone(dto.getCustomer().getPhone())
@@ -168,6 +180,7 @@ public class LeadService {
         Lead lead = new Lead();
         lead.setCustomer(customer);
         lead.setStatus(LeadStatus.OPEN);
+        lead.setReferredFrom("Admin Created");
         
         if (dto.getRegion() != null && dto.getRegion().getId() != null) {
             Region r = new Region();
@@ -313,5 +326,51 @@ public class LeadService {
     @Transactional
     public void deleteLead(Long id) {
         leadRepository.deleteById(id);
+    }
+
+    @Transactional
+    public Lead createManagerLead(com.estatesync.dto.AdminLeadDTO dto, Long managerId) {
+        Customer customer = customerRepository.findByPhone(dto.getCustomer().getPhone())
+                .orElseGet(() -> {
+                    Customer newCust = new Customer();
+                    newCust.setName(dto.getCustomer().getName());
+                    newCust.setEmail(dto.getCustomer().getEmail());
+                    newCust.setPhone(dto.getCustomer().getPhone());
+                    newCust.setIsEmailVerified(true);
+                    return customerRepository.save(newCust);
+                });
+
+        Lead lead = new Lead();
+        lead.setCustomer(customer);
+        lead.setStatus(LeadStatus.OPEN);
+        lead.setReferredFrom("Manager Created");
+        
+        if (dto.getRegion() != null && dto.getRegion().getId() != null) {
+            Region r = new Region();
+            r.setId(dto.getRegion().getId());
+            lead.setRegion(r);
+        }
+
+        User manager = new User();
+        manager.setId(managerId);
+        lead.setManager(manager);
+
+        Lead savedLead = leadRepository.save(lead);
+
+        if (dto.getInterestedProperties() != null) {
+            for (com.estatesync.dto.AdminLeadDTO.PropertyInterestDTO pDto : dto.getInterestedProperties()) {
+                Opportunity opp = new Opportunity();
+                opp.setLead(savedLead);
+                
+                Property p = new Property();
+                p.setId(pDto.getId());
+                opp.setProperty(p);
+                
+                opp.setStatus(OpportunityStatus.NEW);
+                opportunityRepository.save(opp);
+            }
+        }
+
+        return savedLead;
     }
 }

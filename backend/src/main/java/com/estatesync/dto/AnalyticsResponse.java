@@ -19,4 +19,8 @@ public class AnalyticsResponse {
     // Charts
     private List<Map<String, Object>> leadsByStatus;
     private List<Map<String, Object>> leadsByRegion;
+    private List<Map<String, Object>> leadsBySource;
+    private List<Map<String, Object>> customersOverTime;
+    private List<Map<String, Object>> revenueOverTime;
+    private List<Map<String, Object>> visitsOverTime;
 }

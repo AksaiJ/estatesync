@@ -3,7 +3,7 @@ import { Download, FileText, Filter, Calendar } from 'lucide-react';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 import jsPDF from 'jspdf';
-import 'jspdf-autotable';
+import autoTable from 'jspdf-autotable';
 
 export default function ReportsTab() {
   const [reportType, setReportType] = useState('LEAD_ACTIVITY');
@@ -103,7 +103,7 @@ export default function ReportsTab() {
           tableRows.push(rowData);
         });
 
-        doc.autoTable({
+        autoTable(doc, {
           head: [tableColumn],
           body: tableRows,
           startY: 40,

@@ -26,8 +26,9 @@ public class ManagerController {
     private final OpportunityRepository opportunityRepository;
     private final PropertyRepository propertyRepository;
     private final com.estatesync.service.OpportunityService opportunityService;
+    private final com.estatesync.service.PropertyService propertyService;
 
-    public ManagerController(LeadService leadService, ActivityService activityService, UserRepository userRepository, LeadRepository leadRepository, OpportunityRepository opportunityRepository, PropertyRepository propertyRepository, com.estatesync.service.OpportunityService opportunityService) {
+    public ManagerController(LeadService leadService, ActivityService activityService, UserRepository userRepository, LeadRepository leadRepository, OpportunityRepository opportunityRepository, PropertyRepository propertyRepository, com.estatesync.service.OpportunityService opportunityService, com.estatesync.service.PropertyService propertyService) {
         this.leadService = leadService;
         this.activityService = activityService;
         this.userRepository = userRepository;
@@ -35,6 +36,7 @@ public class ManagerController {
         this.opportunityRepository = opportunityRepository;
         this.propertyRepository = propertyRepository;
         this.opportunityService = opportunityService;
+        this.propertyService = propertyService;
     }
 
     @GetMapping("/leads")
@@ -47,7 +49,7 @@ public class ManagerController {
         Long regionId = userDetails.getUser().getRegion() != null ? userDetails.getUser().getRegion().getId() : null;
         if (regionId == null) return ResponseEntity.badRequest().body("Manager has no assigned region");
         
-        return ResponseEntity.ok(leadService.getFilteredLeads(status, regionId, null, search, pageable));
+        return ResponseEntity.ok(leadService.getManagerLeads(status, regionId, userDetails.getUser().getId(), search, pageable));
     }
 
     @GetMapping("/agents")
@@ -122,6 +124,47 @@ public class ManagerController {
         if (regionId == null) return ResponseEntity.badRequest().body("Manager has no assigned region");
         
         return ResponseEntity.ok(propertyService.getFilteredProperties(status, type, regionId, minPrice, maxPrice, search, pageable));
+    }
+
+    @PostMapping("/properties")
+    public ResponseEntity<?> createRegionalProperty(@RequestBody Property property, org.springframework.security.core.Authentication authentication) {
+        com.estatesync.security.CustomUserDetails userDetails = (com.estatesync.security.CustomUserDetails) authentication.getPrincipal();
+        User manager = userRepository.findById(userDetails.getUser().getId()).orElseThrow();
+        Region managerRegion = manager.getRegion();
+        if (managerRegion == null) {
+            return ResponseEntity.badRequest().body("Manager has no assigned region");
+        }
+
+        // Force the property to be in the manager's region
+        property.setRegion(managerRegion);
+        
+        Property createdProperty = propertyService.createProperty(property);
+        return ResponseEntity.ok(createdProperty);
+    }
+
+    @PutMapping("/properties/{id}")
+    public ResponseEntity<?> updateRegionalProperty(@PathVariable Long id, @RequestBody Property propertyDetails, org.springframework.security.core.Authentication authentication) {
+        com.estatesync.security.CustomUserDetails userDetails = (com.estatesync.security.CustomUserDetails) authentication.getPrincipal();
+        Region managerRegion = userDetails.getUser().getRegion();
+        if (managerRegion == null) {
+            return ResponseEntity.badRequest().body("Manager has no assigned region");
+        }
+
+        Property existingProperty = propertyRepository.findById(id).orElse(null);
+        if (existingProperty == null) {
+            return ResponseEntity.notFound().build();
+        }
+
+        // Verify the property belongs to the manager's region
+        if (existingProperty.getRegion() == null || !existingProperty.getRegion().getId().equals(managerRegion.getId())) {
+            return ResponseEntity.status(403).body("Not authorized to edit properties outside your region");
+        }
+
+        // Force the region to remain the manager's region in case the client tried to change it
+        propertyDetails.setRegion(existingProperty.getRegion());
+
+        Property updatedProperty = propertyService.updateProperty(id, propertyDetails);
+        return ResponseEntity.ok(updatedProperty);
     }
 
     @GetMapping("/agents/{agentId}/properties")
@@ -210,6 +253,38 @@ public class ManagerController {
     @GetMapping("/opportunity/{id}/history")
     public ResponseEntity<?> getOpportunityHistory(@PathVariable Long id, org.springframework.security.core.Authentication authentication) {
         return ResponseEntity.ok(activityService.getLogsForOpportunity(id));
+    }
+
+    @PostMapping("/opportunities")
+    public ResponseEntity<?> createOpportunity(@RequestBody Map<String, String> payload, org.springframework.security.core.Authentication authentication) {
+        Long leadId = Long.parseLong(payload.get("leadId"));
+        Long propertyId = Long.parseLong(payload.get("propertyId"));
+        String agentIdStr = payload.get("agentId");
+        
+        com.estatesync.model.Lead lead = leadRepository.findById(leadId).orElse(null);
+        com.estatesync.model.Property property = propertyRepository.findById(propertyId).orElse(null);
+        
+        if (lead == null || property == null) {
+            return ResponseEntity.badRequest().body("Lead or Property not found");
+        }
+
+        com.estatesync.model.Opportunity opp = new com.estatesync.model.Opportunity();
+        opp.setLead(lead);
+        opp.setProperty(property);
+        opp.setStatus(com.estatesync.model.OpportunityStatus.NEW);
+        
+        if (agentIdStr != null && !agentIdStr.isEmpty()) {
+            Long agentId = Long.parseLong(agentIdStr);
+            User agent = userRepository.findById(agentId).orElse(null);
+            opp.setAgent(agent);
+        }
+
+        opp = opportunityRepository.save(opp);
+        
+        com.estatesync.security.CustomUserDetails userDetails = (com.estatesync.security.CustomUserDetails) authentication.getPrincipal();
+        activityService.logSystemEvent(opp, "Opportunity manually created by Manager " + userDetails.getUser().getName());
+        
+        return ResponseEntity.ok(opp);
     }
 
     @org.springframework.beans.factory.annotation.Autowired

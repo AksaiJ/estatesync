@@ -1,0 +1,10 @@
+$scriptDir='D:\SEED\Internship\crms1\backend\'; $script='mvnw.cmd'; icm -ScriptBlock 
+([Scriptblock]::Create((Get-Content -Raw 'D:\SEED\Internship\crms1\backend\mvnw.cmd'))) -NoNewScope : fail to move 
+MAVEN_HOME
+At line:1 char:1
++ & {$scriptDir='D:\SEED\Internship\crms1\backend\'; $script='mvnw.cmd' ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Write-Error], WriteErrorException
+    + FullyQualifiedErrorId : Microsoft.PowerShell.Commands.WriteErrorException
+ 
+Cannot start maven from wrapper  

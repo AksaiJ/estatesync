@@ -17,16 +17,18 @@ public class AuthService {
     private final com.estatesync.repository.UserRepository userRepository;
     private final org.springframework.security.crypto.password.PasswordEncoder passwordEncoder;
     private final OtpService otpService;
+    private final com.estatesync.repository.EmployeeSessionRepository employeeSessionRepository;
 
     public AuthService(AuthenticationManager authenticationManager, JwtUtil jwtUtil, 
                        com.estatesync.repository.UserRepository userRepository,
                        org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
-                       OtpService otpService) {
+                       OtpService otpService, com.estatesync.repository.EmployeeSessionRepository employeeSessionRepository) {
         this.authenticationManager = authenticationManager;
         this.jwtUtil = jwtUtil;
         this.userRepository = userRepository;
         this.passwordEncoder = passwordEncoder;
         this.otpService = otpService;
+        this.employeeSessionRepository = employeeSessionRepository;
     }
 
     @jakarta.annotation.PostConstruct
@@ -45,7 +47,14 @@ public class AuthService {
         CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
         String token = jwtUtil.generateToken(userDetails);
         
-        return new AuthResponse(token, userDetails.getUser().getRole().name(), userDetails.getUser().getName());
+        String sessionToken = java.util.UUID.randomUUID().toString();
+        com.estatesync.model.EmployeeSession session = new com.estatesync.model.EmployeeSession();
+        session.setUser(userDetails.getUser());
+        session.setSessionToken(sessionToken);
+        session.setStartTime(java.time.LocalDateTime.now());
+        session.setLastHeartbeat(java.time.LocalDateTime.now());
+        employeeSessionRepository.save(session);
+        return new AuthResponse(token, userDetails.getUser().getRole().name(), userDetails.getUser().getName(), sessionToken);
     }
 
     public void sendOtp(String email) {
@@ -60,7 +69,14 @@ public class AuthService {
         com.estatesync.model.User user = userRepository.findByEmail(email).orElseThrow(() -> new IllegalArgumentException("User not found"));
         CustomUserDetails userDetails = new CustomUserDetails(user);
         String token = jwtUtil.generateToken(userDetails);
-        return new AuthResponse(token, user.getRole().name(), user.getName());
+        String sessionToken = java.util.UUID.randomUUID().toString();
+        com.estatesync.model.EmployeeSession session = new com.estatesync.model.EmployeeSession();
+        session.setUser(user);
+        session.setSessionToken(sessionToken);
+        session.setStartTime(java.time.LocalDateTime.now());
+        session.setLastHeartbeat(java.time.LocalDateTime.now());
+        employeeSessionRepository.save(session);
+        return new AuthResponse(token, user.getRole().name(), user.getName(), sessionToken);
     }
 
     public void resetPassword(String email, String currentPassword, String newPassword) {

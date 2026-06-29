@@ -16,6 +16,12 @@ export const AuthProvider = ({ children }) => {
       setUser({ token, role, name });
     }
     setLoading(false);
+
+    const handleAuthError = () => {
+      setUser(null);
+    };
+    window.addEventListener('auth-error', handleAuthError);
+    return () => window.removeEventListener('auth-error', handleAuthError);
   }, []);
 
   const login = async (email, password) => {

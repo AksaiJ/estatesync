@@ -3,6 +3,7 @@ import api from '../../services/api';
 import { Plus, Edit, Trash2, MapPin, Map as MapIcon, Image as ImageIcon, Eye, EyeOff, CheckCircle, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import ConfirmModal from '../../components/ConfirmModal';
 import Pagination from '../../components/Pagination';
+import SearchableSelect from '../../components/SearchableSelect';
 import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
@@ -268,14 +269,13 @@ export default function PropertiesTab() {
             <option value="Apartment">Apartment</option>
             <option value="Commercial">Commercial</option>
           </select>
-          <select 
-            className="border border-gray-300 rounded-lg px-4 py-2 text-sm focus:ring-primary-500"
+          <SearchableSelect 
+            className="w-48"
             value={regionFilter}
-            onChange={(e) => { setRegionFilter(e.target.value); setCurrentPage(0); }}
-          >
-            <option value="">All Regions</option>
-            {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
+            onChange={(val) => { setRegionFilter(val); setCurrentPage(0); }}
+            options={[{ value: '', label: 'All Regions' }, ...regions.map(r => ({ value: r.id, label: r.name }))]}
+            placeholder="All Regions"
+          />
           <input 
             type="number" 
             placeholder="Min Price" 
@@ -447,13 +447,16 @@ export default function PropertiesTab() {
                         <option value="Commercial">Commercial</option>
                       </select>
                     </div>
-                    <div className="w-1/2">
-                      <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Region</label>
-                      <select className="w-full border rounded p-2" value={formData.region?.id || ''} onChange={e => setFormData({...formData, region: { id: e.target.value }})}>
-                        <option value="">Select Region</option>
-                        {regions.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                      </select>
-                    </div>
+                    <div className="w-1/2 relative z-50">
+                        <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Region</label>
+                        <SearchableSelect 
+                          className="w-full"
+                          value={formData.region?.id || ''}
+                          onChange={(val) => setFormData({...formData, region: { id: val }})}
+                          options={regions.map(r => ({ value: r.id, label: r.name }))}
+                          placeholder="Select Region"
+                        />
+                      </div>
                   </div>
                   <div className="flex space-x-4 items-end">
                     <div className="w-1/3">

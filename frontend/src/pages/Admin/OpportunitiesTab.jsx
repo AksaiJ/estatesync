@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Target, Search, Filter, MoreVertical, CheckCircle, XCircle } from 'lucide-react';
+import { Target, Search, Filter, MoreVertical, CheckCircle, XCircle, Plus } from 'lucide-react';
 import api from '../../services/api';
 import ConfirmModal from '../../components/ConfirmModal';
+import SearchableSelect from '../../components/SearchableSelect';
 import { Phone, MapPin, Building, Calendar, MessageSquare, Clock, User } from 'lucide-react';
 import OpportunityWorkspaceModal from '../Agent/OpportunityWorkspaceModal';
 import Pagination from '../../components/Pagination';
@@ -9,9 +10,13 @@ import Pagination from '../../components/Pagination';
 export default function OpportunitiesTab() {
   const [opportunities, setOpportunities] = useState([]);
   const [agents, setAgents] = useState([]);
+  const [allLeads, setAllLeads] = useState([]);
+  const [allProperties, setAllProperties] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedOpp, setSelectedOpp] = useState(null);
   const [editOpp, setEditOpp] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addFormData, setAddFormData] = useState({ leadId: '', propertyId: '', agentId: '' });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [confirmConfig, setConfirmConfig] = useState({ isOpen: false, title: '', message: '', type: 'alert', onConfirm: null });
@@ -37,9 +42,11 @@ export default function OpportunitiesTab() {
       if (searchQuery) params.append('search', searchQuery);
       if (statusFilter) params.append('status', statusFilter);
 
-      const [oppsRes, usersRes] = await Promise.all([
+      const [oppsRes, usersRes, leadsRes, propsRes] = await Promise.all([
         api.get(`/admin/opportunities?${params.toString()}`),
-        api.get('/admin/users?size=1000')
+        api.get('/admin/users?size=1000'),
+        api.get('/admin/leads?size=1000'),
+        api.get('/admin/properties?size=1000')
       ]);
       
       const rawOpps = oppsRes.data.content || (Array.isArray(oppsRes.data) ? oppsRes.data : []);
@@ -48,6 +55,12 @@ export default function OpportunitiesTab() {
 
       const allUsers = usersRes.data.content || (Array.isArray(usersRes.data) ? usersRes.data : []);
       setAgents(allUsers.filter(u => u.role === 'AGENT'));
+
+      const fetchedLeads = leadsRes.data.content || (Array.isArray(leadsRes.data) ? leadsRes.data : []);
+      setAllLeads(fetchedLeads);
+
+      const fetchedProps = propsRes.data.content || (Array.isArray(propsRes.data) ? propsRes.data : []);
+      setAllProperties(fetchedProps);
     } catch (err) {
       console.error("Failed to fetch data", err);
     } finally {
@@ -110,6 +123,15 @@ export default function OpportunitiesTab() {
             <option value="CLOSED_LOST">Closed Lost</option>
             <option value="UNRESPONSIVE">Unresponsive</option>
           </select>
+          <button 
+            onClick={() => {
+              setAddFormData({ leadId: '', propertyId: '', agentId: '' });
+              setShowAddModal(true);
+            }}
+            className="bg-primary-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-primary-700 transition-colors shadow-sm flex items-center justify-center sm:w-auto"
+          >
+            <Plus size={18} className="mr-2" /> Add Opportunity
+          </button>
         </div>
       </div>
 
@@ -138,6 +160,7 @@ export default function OpportunitiesTab() {
                     <div className="text-sm text-gray-500 flex items-center mt-1">
                       <Phone size={12} className="mr-1" /> {opp.lead?.customer?.phone}
                     </div>
+                    {opp.lead?.referredFrom && <div className="text-[10px] text-gray-400 mt-1 font-medium">from {opp.lead.referredFrom}</div>}
                   </td>
                   <td className="py-4 px-6">
                     <div className="flex justify-between items-start mb-1">
@@ -244,25 +267,35 @@ export default function OpportunitiesTab() {
                   <option value="UNRESPONSIVE">Unresponsive</option>
                 </select>
               </div>
-              <div className="mb-4">
-                <label className="block text-sm font-semibold text-gray-700 mb-1">Assign to Agent</label>
-                <select
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary-500 outline-none"
-                  value={editOpp.agent?.id || ''}
-                  onChange={(e) => setEditOpp({...editOpp, agent: { id: e.target.value }})}
-                >
-                  <option value="">Unassigned</option>
-                  {agents.sort((a, b) => {
-                    const aSame = a.region?.id === editOpp.property?.region?.id ? 1 : 0;
-                    const bSame = b.region?.id === editOpp.property?.region?.id ? 1 : 0;
-                    return bSame - aSame;
-                  }).map(a => (
-                    <option key={a.id} value={a.id}>
-                      {a.name} {a.region?.id === editOpp.property?.region?.id ? '★ (Same Region)' : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                <div className="mb-4 relative z-40">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Assign to Agent</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={editOpp.agent?.id || ''}
+                    onChange={(val) => setEditOpp({...editOpp, agent: { id: val }})}
+                    placeholder="Unassigned"
+                    options={[
+                      { value: '', label: 'Unassigned', display: <span className="text-gray-500 italic">Unassigned</span> },
+                      ...agents.sort((a, b) => {
+                        const aSame = a.region?.id === editOpp.property?.region?.id ? 1 : 0;
+                        const bSame = b.region?.id === editOpp.property?.region?.id ? 1 : 0;
+                        return bSame - aSame;
+                      }).map(a => ({
+                        value: a.id,
+                        label: `${a.name} (ID: ${a.id}) - ${a.region?.name || 'No Region'}`,
+                        display: (
+                          <div className="flex items-center w-full">
+                            <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{a.id}</span>
+                            <span className="flex-1 font-medium text-gray-900 truncate px-2">
+                              {a.name} {a.region?.id === editOpp.property?.region?.id && <span className="text-amber-500 ml-1">★</span>}
+                            </span>
+                            <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{a.region?.name || 'No Region'}</span>
+                          </div>
+                        )
+                      }))
+                    ]}
+                  />
+                </div>
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   type="button"
@@ -308,6 +341,116 @@ export default function OpportunitiesTab() {
         {...confirmConfig} 
         onCancel={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))} 
       />
+
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex justify-center items-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-visible flex flex-col max-h-[90vh]">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+              <h3 className="text-lg font-bold text-gray-900">Add New Opportunity</h3>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 transition-colors">
+                <span className="text-2xl leading-none">&times;</span>
+              </button>
+            </div>
+            <div className="p-6 overflow-y-visible flex-1">
+              <form onSubmit={async (e) => {
+                e.preventDefault();
+                if (!addFormData.leadId || !addFormData.propertyId) {
+                  showAlert("Error", "Please select both a Lead and a Property.");
+                  return;
+                }
+                try {
+                  await api.post('/admin/opportunities', addFormData);
+                  setShowAddModal(false);
+                  fetchData();
+                } catch(err) {
+                  console.error(err);
+                  showAlert("Error", "Failed to create opportunity");
+                }
+              }}>
+                <div className="mb-4 relative z-50">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Select Lead *</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addFormData.leadId}
+                    onChange={(val) => setAddFormData({...addFormData, leadId: val})}
+                    placeholder="-- Select Lead --"
+                    options={allLeads.map(l => ({
+                      value: l.id,
+                      label: `${l.customer?.name} - ${l.customer?.phone} (ID: ${l.id})`,
+                      display: (
+                        <div className="flex flex-col w-full">
+                          <span className="font-medium text-gray-900">{l.customer?.name}</span>
+                          <span className="text-gray-500 text-xs">{l.customer?.phone} | {l.customer?.email}</span>
+                        </div>
+                      )
+                    }))}
+                  />
+                </div>
+                
+                <div className="mb-4 relative z-40">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Select Property *</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addFormData.propertyId}
+                    onChange={(val) => setAddFormData({...addFormData, propertyId: val})}
+                    placeholder="-- Select Property --"
+                    options={allProperties.map(p => ({
+                      value: p.id,
+                      label: `${p.title} - ${p.location} (ID: ${p.id})`,
+                      display: (
+                        <div className="flex flex-col w-full">
+                          <span className="font-medium text-gray-900 truncate">{p.title}</span>
+                          <span className="text-gray-500 text-xs truncate">{p.location} | {p.propertyType} | ${p.price?.toLocaleString()}</span>
+                        </div>
+                      )
+                    }))}
+                  />
+                </div>
+
+                <div className="mb-6 relative z-30">
+                  <label className="block text-sm font-semibold text-gray-700 mb-1">Assign to Agent (Optional)</label>
+                  <SearchableSelect
+                    className="w-full"
+                    value={addFormData.agentId}
+                    onChange={(val) => setAddFormData({...addFormData, agentId: val})}
+                    placeholder="-- Unassigned --"
+                    options={[
+                      { value: '', label: '-- Unassigned --' },
+                      ...agents.map(a => ({
+                        value: a.id,
+                        label: `${a.name} ${a.region ? `(${a.region.name})` : ''}`,
+                        display: (
+                          <div className="flex items-center w-full">
+                            <span className="w-10 text-gray-400 text-xs font-mono shrink-0">#{a.id}</span>
+                            <span className="flex-1 font-medium text-gray-900 truncate px-2">{a.name}</span>
+                            <span className="text-gray-500 text-xs text-right whitespace-nowrap shrink-0">{a.region?.name || 'No Region'}</span>
+                          </div>
+                        )
+                      }))
+                    ]}
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 text-sm font-medium text-white bg-primary-600 rounded-lg hover:bg-primary-700 transition-colors shadow-sm"
+                  >
+                    Create Opportunity
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

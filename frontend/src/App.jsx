@@ -5,6 +5,7 @@ import { Toaster } from 'react-hot-toast';
 // Pages
 import PublicHome from './pages/Public/PublicHome';
 import AdminDashboard from './pages/Admin/AdminDashboard';
+import AnalyticsTracker from './components/AnalyticsTracker';
 
 import ManagerDashboard from './pages/Manager/ManagerDashboard';
 import AgentDashboard from './pages/Agent/AgentDashboard';
@@ -27,6 +28,7 @@ function App() {
     <AuthProvider>
       <Toaster position="top-right" />
       <Router>
+        <AnalyticsTracker />
         <Routes>
           <Route path="/" element={<PublicHome />} />
           <Route path="/login" element={<Login />} />

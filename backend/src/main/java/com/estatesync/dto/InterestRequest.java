@@ -11,4 +11,5 @@ public class InterestRequest {
     private String preferredLocation;
     private String propertyType;
     private List<Long> propertyIds;
+    private String referredFrom;
 }

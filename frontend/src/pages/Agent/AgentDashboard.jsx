@@ -12,6 +12,8 @@ export default function AgentDashboard() {
   const [loading, setLoading] = useState(true);
   const [selectedOpp, setSelectedOpp] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [sortOrder, setSortOrder] = useState('updatedAt,desc');
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(0);
@@ -22,13 +24,14 @@ export default function AgentDashboard() {
       fetchOpportunities();
     }, 300);
     return () => clearTimeout(delayDebounceFn);
-  }, [currentPage, searchQuery]);
+  }, [currentPage, searchQuery, statusFilter, sortOrder]);
 
   const fetchOpportunities = async () => {
     try {
       setLoading(true);
-      const params = new URLSearchParams({ page: currentPage, size: 10 });
+      const params = new URLSearchParams({ page: currentPage, size: 10, sort: sortOrder });
       if (searchQuery) params.append('search', searchQuery);
+      if (statusFilter) params.append('status', statusFilter);
 
       const res = await api.get(`/agent/opportunities?${params.toString()}`);
       setOpportunities(res.data.content || (Array.isArray(res.data) ? res.data : []));
@@ -61,22 +64,48 @@ export default function AgentDashboard() {
         <VisitsTab role="AGENT" />
       ) : (
         <>
-      <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-gray-900">My Leads</h1>
-          <p className="text-gray-500">Click a row to open the workspace and perform actions.</p>
+        <div className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">My Leads</h1>
+            <p className="text-sm text-gray-500 mt-1">Manage and track your assigned properties</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3 w-full md:w-auto">
+            <div className="relative flex-1 md:w-64">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
+              <input 
+                type="text" 
+                placeholder="Search leads or properties..." 
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-shadow text-sm"
+                value={searchQuery}
+                onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(0); }}
+              />
+            </div>
+            <select 
+              className="py-2 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none text-sm text-gray-700 bg-white"
+              value={statusFilter}
+              onChange={(e) => { setStatusFilter(e.target.value); setCurrentPage(0); }}
+            >
+              <option value="">All Statuses</option>
+              <option value="NEW">New</option>
+              <option value="CONTACTED">Contacted</option>
+              <option value="VISIT_SCHEDULED">Visit Scheduled</option>
+              <option value="VISIT_COMPLETED">Visit Completed</option>
+              <option value="PROPOSAL_SENT">Proposal Sent</option>
+              <option value="IN_NEGOTIATION">In Negotiation</option>
+              <option value="CLOSED_WON">Closed Won</option>
+              <option value="CLOSED_LOST">Closed Lost</option>
+            </select>
+            <select 
+              className="py-2 px-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none text-sm text-gray-700 bg-white"
+              value={sortOrder}
+              onChange={(e) => { setSortOrder(e.target.value); setCurrentPage(0); }}
+            >
+              <option value="updatedAt,desc">Recently Updated</option>
+              <option value="createdAt,desc">Newest First</option>
+              <option value="createdAt,asc">Oldest First</option>
+            </select>
+          </div>
         </div>
-        <div className="relative w-full md:w-64">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18}/>
-          <input 
-            type="text" 
-            placeholder="Search leads or properties..." 
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 outline-none transition-shadow"
-            value={searchQuery}
-            onChange={(e) => { setSearchQuery(e.target.value); setCurrentPage(0); }}
-          />
-        </div>
-      </div>
 
       <div className="flex-1 overflow-hidden bg-white rounded-xl shadow-sm border border-gray-100 flex flex-col">
         <div className="overflow-auto flex-1">
@@ -105,6 +134,7 @@ export default function AgentDashboard() {
                       <div className="text-sm text-gray-500 flex items-center mt-1">
                         <Phone size={12} className="mr-1" /> {opp.lead?.customer?.phone}
                       </div>
+                      {opp.lead?.referredFrom && <div className="text-[10px] text-gray-400 mt-1 font-medium">from {opp.lead.referredFrom}</div>}
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex justify-between items-start mb-2">
@@ -161,8 +191,9 @@ export default function AgentDashboard() {
             await fetchOpportunities();
             // Refetch current page and find the updated opp to update the modal
             try {
-              const params = new URLSearchParams({ page: currentPage, size: 10 });
+              const params = new URLSearchParams({ page: currentPage, size: 10, sort: sortOrder });
               if (searchQuery) params.append('search', searchQuery);
+              if (statusFilter) params.append('status', statusFilter);
               const res = await api.get(`/agent/opportunities?${params.toString()}`);
               const rawData = res.data.content || (Array.isArray(res.data) ? res.data : []);
               const updatedOpp = rawData.find(o => o.id === selectedOpp.id);
