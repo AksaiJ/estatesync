@@ -2,7 +2,9 @@ package com.estatesync.service;
 
 import com.estatesync.model.Property;
 import com.estatesync.repository.PropertyRepository;
+import com.estatesync.specification.PropertySpecification;
 import org.springframework.beans.BeanUtils;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,11 +26,22 @@ public class PropertyService {
 
     public org.springframework.data.domain.Page<Property> getFilteredProperties(
             String status, String type, Long regionId, Double minPrice, Double maxPrice, String search, org.springframework.data.domain.Pageable pageable) {
-        org.springframework.data.jpa.domain.Specification<Property> spec = org.springframework.data.jpa.domain.Specification.where(com.estatesync.specification.PropertySpecification.hasStatus(status))
-                .and(com.estatesync.specification.PropertySpecification.hasType(type))
-                .and(com.estatesync.specification.PropertySpecification.hasRegion(regionId))
-                .and(com.estatesync.specification.PropertySpecification.priceBetween(minPrice, maxPrice))
-                .and(com.estatesync.specification.PropertySpecification.searchByTitleOrLocation(search));
+        
+        // Start the specification directly with the status rule (the compiler knows its type)
+        Specification<Property> spec = Specification.where(PropertySpecification.hasStatus(status));
+
+        Specification<Property> typeSpec = PropertySpecification.hasType(type);
+        if (typeSpec != null) spec = spec.and(typeSpec);
+
+        Specification<Property> regionSpec = PropertySpecification.hasRegion(regionId);
+        if (regionSpec != null) spec = spec.and(regionSpec);
+
+        Specification<Property> priceSpec = PropertySpecification.priceBetween(minPrice, maxPrice);
+        if (priceSpec != null) spec = spec.and(priceSpec);
+
+        Specification<Property> searchSpec = PropertySpecification.searchByTitleOrLocation(search);
+        if (searchSpec != null) spec = spec.and(searchSpec);
+
         return propertyRepository.findAll(spec, pageable);
     }
 
