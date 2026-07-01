@@ -4,7 +4,7 @@ import axiosInstance from 'axios';
 import toast from 'react-hot-toast';
 
 const api = axiosInstance.create({
-  baseURL: `http://${window.location.hostname}:8080/api`,
+  baseURL: `http://${window.location.hostname}:8081/api`,
 });
 
 api.interceptors.request.use((config) => {
