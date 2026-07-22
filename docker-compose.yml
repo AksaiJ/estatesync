@@ -24,6 +24,7 @@ services:
       - SPRING_DATASOURCE_URL=jdbc:mysql://db:3306/estatesync_db?allowPublicKeyRetrieval=true&useSSL=false
       - SPRING_DATASOURCE_USERNAME=root
       - SPRING_DATASOURCE_PASSWORD=${MYSQL_ROOT_PASSWORD}
+      - APP_FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
     depends_on:
       - db
     restart: unless-stopped
