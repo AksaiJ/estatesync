@@ -129,7 +129,7 @@ public class LeadService {
         // Actually, if we close it here, we should just assume CLOSED_LOST if no status is specified
         if (opp.getStatus() != OpportunityStatus.CLOSED_WON && opp.getStatus() != OpportunityStatus.CLOSED_LOST) {
             User manager = managerId != null ? userRepository.findById(managerId).orElse(null) : null;
-            opportunityService.forceOverrideStatus(opp, OpportunityStatus.CLOSED_LOST, manager != null ? manager : new User() {{ setRole(Role.SYSTEM); setName("System"); }}, "Opportunity closed automatically.");
+            opportunityService.forceOverrideStatus(opp, OpportunityStatus.CLOSED_LOST, manager != null ? manager : new User() {{ setRole(Role.ADMIN); setName("System"); }}, "Opportunity closed automatically.");
         }
         
         checkAndCloseParentLead(opp.getLead());
@@ -313,8 +313,8 @@ public class LeadService {
             // Cascade close all active opportunities
             List<Opportunity> opps = opportunityRepository.findByLeadId(id);
             for (Opportunity opp : opps) {
-                if (opp.getStatus() != OpportunityStatus.CLOSED) {
-                    opp.setStatus(OpportunityStatus.CLOSED);
+                if (opp.getStatus() != OpportunityStatus.CLOSED_LOST && opp.getStatus() != OpportunityStatus.CLOSED_WON) {
+                    opp.setStatus(OpportunityStatus.CLOSED_LOST);
                     opportunityRepository.save(opp);
                     activityService.logSystemEvent(opp, "Opportunity auto-closed because parent lead was closed.");
                 }
@@ -358,16 +358,16 @@ public class LeadService {
         Lead savedLead = leadRepository.save(lead);
 
         if (dto.getInterestedProperties() != null) {
-            for (com.estatesync.dto.AdminLeadDTO.PropertyInterestDTO pDto : dto.getInterestedProperties()) {
+            for (com.estatesync.dto.AdminLeadDTO.ReferenceDTO pDto : dto.getInterestedProperties()) {
                 Opportunity opp = new Opportunity();
                 opp.setLead(savedLead);
                 
-                Property p = new Property();
-                p.setId(pDto.getId());
-                opp.setProperty(p);
-                
-                opp.setStatus(OpportunityStatus.NEW);
-                opportunityRepository.save(opp);
+                Property p = propertyRepository.findById(pDto.getId()).orElse(null);
+                if (p != null) {
+                    opp.setProperty(p);
+                    opp.setStatus(OpportunityStatus.NEW);
+                    opportunityRepository.save(opp);
+                }
             }
         }
 
