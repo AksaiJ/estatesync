@@ -21,8 +21,8 @@ jobs:
       - name: Deploy with Docker Compose
         run: |
           # Pull the latest base images if needed
-          docker compose pull
+          docker compose -f docker-compose.pi.yml pull
           # Stop old containers
-          docker compose down
+          docker compose -f docker-compose.pi.yml down
           # Build and start new containers in the background
-          docker compose up -d --build
+          docker compose -f docker-compose.pi.yml up -d --build
