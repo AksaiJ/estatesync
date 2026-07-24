@@ -31,14 +31,6 @@ public class AuthService {
         this.employeeSessionRepository = employeeSessionRepository;
     }
 
-    @jakarta.annotation.PostConstruct
-    public void fixAdminPassword() {
-        userRepository.findByEmail("admin@estatesync.com").ifPresent(admin -> {
-            admin.setPasswordHash(passwordEncoder.encode("admin123"));
-            userRepository.save(admin);
-        });
-    }
-
     public AuthResponse authenticate(AuthRequest request) {
         Authentication authentication = authenticationManager.authenticate(
                 new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
